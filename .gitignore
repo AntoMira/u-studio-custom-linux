@@ -1,0 +1,14 @@
+# Python environment
+venv/
+__pycache__/
+*.pyc
+
+# Local credentials / secrets
+.env
+
+# Local simulation output folder
+output_sim/
+
+# Editor / IDE configuration folders
+.idea/
+.vscode/

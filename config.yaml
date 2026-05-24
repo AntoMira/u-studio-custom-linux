@@ -1,0 +1,37 @@
+# Ulanzi D200 Stream Deck configuration mapping
+# Button indices range from 0 to 12.
+
+buttons:
+  - index: 0
+    device_type: "light"
+    action_type: "hue_toggle"
+    target: "1"  # Replace with your actual Philips Hue Bulb ID
+    label: "Ceiling Light"
+    icon: "assets/icons/ceiling.png"
+
+  - index: 1
+    device_type: "light"
+    action_type: "hue_toggle"
+    target: "2"  # Replace with your actual Philips Hue Bulb ID
+    label: "Desk Lamp"
+    icon: "assets/icons/desk.png"
+
+  - index: 2
+    device_type: "plug"
+    action_type: "hue_toggle"
+    target: "3"  # Replace with your actual Philips Hue Smart Plug ID
+    label: "Coffee Maker"
+    icon: "assets/icons/coffee.png"
+
+  - index: 3
+    device_type: "plug"
+    action_type: "hue_toggle"
+    target: "4"  # Replace with your actual Philips Hue Smart Plug ID
+    label: "Room Fan"
+    icon: "assets/icons/fan.png"
+
+  - index: 12
+    device_type: "widget"
+    action_type: "clock"
+    label: "Time"
+    icon: "assets/icons/clock.png"

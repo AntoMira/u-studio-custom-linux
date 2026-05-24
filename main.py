@@ -3,6 +3,7 @@ import sys
 import time
 import logging
 import threading
+import fcntl
 from datetime import datetime
 import yaml
 from dotenv import load_dotenv
@@ -15,6 +16,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 class StreamDeckApp:
     def __init__(self):
+        # Single Instance Lock Enforcement
+        self.lock_file_path = "/home/zee/code/streamdeck/app.lock"
+        try:
+            self.lock_file = open(self.lock_file_path, "w")
+            fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.lock_file.write(str(os.getpid()))
+            self.lock_file.flush()
+        except (IOError, BlockingIOError):
+            logging.error("StreamDeckApp: Another instance is already running. Aborting.")
+            sys.exit(1)
+
         # 1. Load environment configurations
         load_dotenv()
         
@@ -27,6 +39,12 @@ class StreamDeckApp:
         # 2. Load and parse config.yaml safely
         self.config_path = "/home/zee/code/streamdeck/config.yaml"
         self.buttons_config = {}
+        self.font_size_label = 12
+        self.font_size_status = 10
+        self.margin_label = 10
+        self.margin_status = 25
+        self.small_window_mode = 0
+        self.state_sync_interval = 5
         self.load_config()
 
         # 3. Initialize Controller & Deck Manager
@@ -35,7 +53,14 @@ class StreamDeckApp:
             username=self.username, 
             simulator_mode=self.simulator_mode
         )
-        self.deck_mgr = DeckManager(simulator_mode=self.simulator_mode)
+        self.deck_mgr = DeckManager(
+            simulator_mode=self.simulator_mode,
+            font_size_label=self.font_size_label,
+            font_size_status=self.font_size_status,
+            margin_label=self.margin_label,
+            margin_status=self.margin_status,
+            small_window_mode=self.small_window_mode
+        )
         
         # Keep track of active clock widgets
         self.clock_buttons = []
@@ -54,6 +79,13 @@ class StreamDeckApp:
                 # Enforce safe parsing to prevent arbitrary code execution vulnerabilities
                 config_data = yaml.safe_load(f)
                 
+            self.font_size_label = config_data.get("font_size_label", 12)
+            self.font_size_status = config_data.get("font_size_status", 10)
+            self.margin_label = config_data.get("margin_label", 10)
+            self.margin_status = config_data.get("margin_status", 25)
+            self.small_window_mode = config_data.get("small_window_mode", 0)
+            self.state_sync_interval = int(config_data.get("state_sync_interval", 5))
+            
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
                 index = btn.get("index")
@@ -91,7 +123,8 @@ class StreamDeckApp:
                 device_type=device_type,
                 is_on=state.get("on", False),
                 brightness=brightness_pct,
-                icon_path=icon
+                icon_path=icon,
+                reachable=state.get("reachable", True)
             )
         elif device_type == "widget" and config.get("action_type") == "clock":
             # For clocks, the background thread handles periodic redraws, 
@@ -169,6 +202,51 @@ class StreamDeckApp:
                 logging.error(f"StreamDeckApp: Error in Clock Daemon loop: {e}")
                 time.sleep(5)
 
+    def run_state_sync_daemon(self):
+        """
+        Daemon thread task periodically polling the Hue Bridge to synchronize
+        device states on the Stream Deck buttons if altered externally.
+        """
+        logging.info("StreamDeckApp: Background State Sync Daemon started.")
+        while self.running:
+            try:
+                # Query all lights in a single network request to minimize bridge latency
+                all_devices = self.hue.list_devices()
+                if all_devices:
+                    for index, config in self.buttons_config.items():
+                        device_type = config.get("device_type")
+                        if device_type in ("light", "plug"):
+                            target_id = config.get("target")
+                            if target_id and target_id in all_devices:
+                                device_data = all_devices[target_id]
+                                
+                                # Extract state safely supporting both real Hue API and Simulator mock schema
+                                if "state" in device_data:
+                                    state = device_data["state"]
+                                else:
+                                    state = device_data
+                                    
+                                is_on = state.get("on", False)
+                                reachable = state.get("reachable", True)
+                                brightness = state.get("bri") if device_type == "light" else None
+                                brightness_pct = int((brightness / 254.0) * 100) if brightness is not None else None
+                                
+                                # Push redraw to display
+                                self.deck_mgr.update_button(
+                                    index=index,
+                                    label=config.get("label", ""),
+                                    device_type=device_type,
+                                    is_on=is_on,
+                                    brightness=brightness_pct,
+                                    icon_path=config.get("icon"),
+                                    reachable=reachable
+                                )
+                # Poll every dynamic sync interval configured by user
+                time.sleep(self.state_sync_interval)
+            except Exception as e:
+                logging.error(f"StreamDeckApp: Error in State Sync Daemon loop: {e}")
+                time.sleep(self.state_sync_interval)
+
     def run_interactive_simulator(self):
         """
         Interactive command-line interface thread for Simulator Mode.
@@ -222,6 +300,10 @@ class StreamDeckApp:
         if self.clock_buttons:
             clock_thread = threading.Thread(target=self.run_clock_daemon, daemon=True)
             clock_thread.start()
+
+        # Start the background state synchronization daemon thread
+        sync_thread = threading.Thread(target=self.run_state_sync_daemon, daemon=True)
+        sync_thread.start()
 
         # If in Simulator Mode, spawn the interactive console thread
         if self.simulator_mode:

@@ -22,7 +22,10 @@ class HueController:
             "1": {"on": True, "bri": 254, "reachable": True, "type": "Dimmable light"},
             "2": {"on": False, "bri": 128, "reachable": True, "type": "Dimmable light"},
             "3": {"on": False, "reachable": True, "type": "On/Off plug-in unit"},
-            "4": {"on": True, "reachable": True, "type": "On/Off plug-in unit"}
+            "4": {"on": True, "reachable": True, "type": "On/Off plug-in unit"},
+            "5": {"on": True, "bri": 254, "reachable": True, "type": "Dimmable light"},
+            "6": {"on": True, "reachable": True, "type": "On/Off plug-in unit"},
+            "7": {"on": False, "reachable": True, "type": "On/Off plug-in unit"}
         }
 
         if self.simulator_mode:
@@ -145,3 +148,27 @@ class HueController:
         payload = {"on": True, "bri": hue_bri}
         logging.info(f"HueController: Setting Device {light_id} brightness to {percent}% ({hue_bri}/254)")
         return self.set_light_state(light_id, payload)
+
+    def list_devices(self) -> dict:
+        """
+        Fetches all registered lights and smart plugs from the Hue Bridge.
+        Returns a dictionary mapping device ID to device details, or an empty dict on error.
+        """
+        if self.simulator_mode:
+            return self._mock_states
+
+        try:
+            url = f"{self.base_url}/lights"
+            response = requests.get(url, timeout=self.timeout_seconds)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) > 0 and "error" in data[0]:
+                    logging.error(f"HueController Bridge Error: {data[0]['error']['description']}")
+                    return {}
+                return data
+            else:
+                logging.error(f"HueController: HTTP error {response.status_code} listing devices")
+                return {}
+        except requests.exceptions.RequestException as e:
+            logging.error(f"HueController Connection Exception listing devices: {e}")
+            return {}

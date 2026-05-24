@@ -1,34 +1,101 @@
 # Ulanzi D200 Stream Deck configuration mapping
 # Button indices range from 0 to 12.
 
+# ==============================================================================
+# GLOBAL UI SETTINGS
+# ==============================================================================
+# font_size_label:
+#   Font size used for the top label of the buttons.
+#   Value: Any positive integer (e.g., 12 for default, 30 for extra large).
+#
+# font_size_status:
+#   Font size used for the bottom status text of the buttons.
+#   Value: Any positive integer (e.g., 10 for default, 30 for extra large).
+#
+# margin_label:
+#   Top margin offset in pixels to position the top label text.
+#   Value: Any integer (default: 10).
+#
+# margin_status:
+#   Bottom margin offset in pixels (from bottom up) to position the status text.
+#   Value: Any integer (default: 25, 45 for large fonts to prevent cutoffs).
+#
+# small_window_mode:
+#   Custom display layout mode for the Ulanzi D200 small LCD information screen.
+#   Values:
+#     - 0: STATS mode (renders a clean system/statistics overview)
+#     - 1: CLOCK mode (keeps default watchface on Ulanzi screen)
+#     - 2: BACKGROUND mode (renders custom background template)
+#
+# state_sync_interval:
+#   Background polling interval in seconds to sync device states from the Hue Bridge.
+#   Value: Any positive integer (default: 5).
+# ==============================================================================
+
+font_size_label: 30     # Font size for the top label (default: 12)
+font_size_status: 30    # Font size for the bottom status text (default: 10)
+margin_label: 10        # Top margin for the label (default: 10)
+margin_status: 45       # Bottom margin for the status text (default: 25)
+small_window_mode: 1    # Small screen mode: 0 for Stats, 1 for Clock, 2 for Background
+state_sync_interval: 5  # Polling interval in seconds to sync device states from bridge (default: 5)
+
+# ==============================================================================
+# BUTTON MAPPINGS
+# ==============================================================================
+# Each button configuration under the 'buttons' list supports the following attributes:
+#
+# - index:
+#     The physical key index on the Ulanzi D200 Stream Deck.
+#     Value: Integer from 0 to 12.
+#
+# - device_type:
+#     The category/class of the device mapped to this button.
+#     Values:
+#       - "light" : Philips Hue smart lights (bulbs, LED strips, etc.)
+#       - "plug"  : Philips Hue smart plugs (on/off appliances)
+#       - "widget": Interactive system/utility components (like a clock)
+#
+# - action_type:
+#     The action to execute when the button is pressed.
+#     Values:
+#       - "hue_toggle": Toggle power state of a Philips Hue light or smart plug (requires 'target')
+#       - "clock"     : Toggle display of high-precision current time/date widget
+#
+# - target:
+#     The unique ID of the target device on the local Philips Hue Bridge.
+#     Value: String representing bridge light index (e.g., "1", "2").
+#     *Not required when action_type is "clock".
+#
+# - label:
+#     Text label shown at the top of the button key face.
+#     Value: Any string (e.g., "Time", "Ceiling Light").
+#
+# - icon:
+#     Local path to a customized PNG icon file to overlay on the button center.
+#     Value: Valid path relative to streamdeck folder (e.g., "assets/icons/clock.png").
+# ==============================================================================
+
 buttons:
   - index: 0
     device_type: "light"
     action_type: "hue_toggle"
-    target: "1"  # Replace with your actual Philips Hue Bulb ID
-    label: "Ceiling Light"
+    target: "5"  # Replace with your actual Philips Hue Bulb ID
+    label: "Luz Teto"
     icon: "assets/icons/ceiling.png"
 
   - index: 1
     device_type: "light"
     action_type: "hue_toggle"
     target: "2"  # Replace with your actual Philips Hue Bulb ID
-    label: "Desk Lamp"
+    label: "Luz Mesa"
     icon: "assets/icons/desk.png"
 
   - index: 2
     device_type: "plug"
     action_type: "hue_toggle"
-    target: "3"  # Replace with your actual Philips Hue Smart Plug ID
-    label: "Coffee Maker"
+    target: "7"  # Replace with your actual Philips Hue Smart Plug ID
+    label: "Impressora 3D"
     icon: "assets/icons/coffee.png"
-
-  - index: 3
-    device_type: "plug"
-    action_type: "hue_toggle"
-    target: "4"  # Replace with your actual Philips Hue Smart Plug ID
-    label: "Room Fan"
-    icon: "assets/icons/fan.png"
 
   - index: 12
     device_type: "widget"

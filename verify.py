@@ -29,6 +29,16 @@ def test_config_parsing():
         assert btn["device_type"] in ("light", "plug", "widget"), f"Unsupported device_type: {btn['device_type']}"
         assert "action_type" in btn, "Button config is missing 'action_type' key"
         
+    assert "margin_label" in config, "Missing 'margin_label' root in config.yaml"
+    assert isinstance(config["margin_label"], int), "margin_label must be an integer"
+    assert "margin_status" in config, "Missing 'margin_status' root in config.yaml"
+    assert isinstance(config["margin_status"], int), "margin_status must be an integer"
+    assert "small_window_mode" in config, "Missing 'small_window_mode' root in config.yaml"
+    assert isinstance(config["small_window_mode"], int), "small_window_mode must be an integer"
+    assert "state_sync_interval" in config, "Missing 'state_sync_interval' root in config.yaml"
+    assert isinstance(config["state_sync_interval"], int), "state_sync_interval must be an integer"
+    assert config["state_sync_interval"] > 0, "state_sync_interval must be a positive integer greater than 0"
+
     print("✅ config.yaml safety validation passed successfully.")
 
 def test_hue_controller_simulation():
@@ -68,7 +78,7 @@ def test_deck_manager_rendering():
     print("Testing DeckManager image rendering output...")
     manager = DeckManager(simulator_mode=True)
     
-    # Render test button
+    # Render test button (online)
     test_btn_idx = 9
     manager.update_button(
         index=test_btn_idx,
@@ -76,12 +86,28 @@ def test_deck_manager_rendering():
         device_type="light",
         is_on=True,
         brightness=85,
-        icon_path=None
+        icon_path=None,
+        reachable=True
     )
     
-    # Verify image output characteristics
+    # Render test button (offline)
+    test_btn_offline_idx = 8
+    manager.update_button(
+        index=test_btn_offline_idx,
+        label="Offline Unit",
+        device_type="plug",
+        is_on=False,
+        icon_path=None,
+        reachable=False
+    )
+    
+    # Verify image output characteristics (online)
     target_path = os.path.join(manager.output_sim_dir, f"button_{test_btn_idx}.png")
     assert os.path.exists(target_path), f"Simulated button image not saved to {target_path}"
+    
+    # Verify image output characteristics (offline)
+    target_path_offline = os.path.join(manager.output_sim_dir, f"button_{test_btn_offline_idx}.png")
+    assert os.path.exists(target_path_offline), f"Simulated offline button image not saved to {target_path_offline}"
     
     with Image.open(target_path) as img:
         assert img.size == (196, 196), f"Wrong dimensions: {img.size}, expected (196, 196)"

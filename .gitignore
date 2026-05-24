@@ -12,3 +12,6 @@ output_sim/
 # Editor / IDE configuration folders
 .idea/
 .vscode/
+.build/
+.cache/
+app.lock

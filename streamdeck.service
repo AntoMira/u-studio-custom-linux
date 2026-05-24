@@ -1,0 +1,17 @@
+[Unit]
+Description=Ulanzi D200 Stream Deck Philips Hue Controller Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=zee
+WorkingDirectory=/home/zee/code/streamdeck
+ExecStart=/home/zee/code/streamdeck/run.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=streamdeck
+
+[Install]
+WantedBy=multi-user.target

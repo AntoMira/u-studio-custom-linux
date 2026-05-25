@@ -8,6 +8,14 @@ from datetime import datetime
 import yaml
 from dotenv import load_dotenv
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        ZoneInfo = None
+
 from hue_controller import HueController
 from deck_manager import DeckManager
 from weather_service import WeatherService
@@ -36,6 +44,19 @@ class StreamDeckApp:
         self.bridge_ip = os.getenv("HUE_BRIDGE_IP", "127.0.0.1")
         self.username = os.getenv("HUE_USERNAME", "mock_user")
         self.simulator_mode = os.getenv("SIMULATOR_MODE", "True").lower() in ("true", "1", "yes")
+
+        # Parse TIMEZONE configuration safely with elegant fallbacks
+        self.timezone_str = os.getenv("TIMEZONE", "").strip()
+        self.timezone = None
+        if self.timezone_str:
+            if ZoneInfo is not None:
+                try:
+                    self.timezone = ZoneInfo(self.timezone_str)
+                    logging.info(f"StreamDeckApp: Configured timezone: {self.timezone_str}")
+                except Exception as e:
+                    logging.error(f"StreamDeckApp: Failed to load timezone '{self.timezone_str}': {e}. Falling back to system timezone.")
+            else:
+                logging.warning("StreamDeckApp: zoneinfo module is unavailable. Falling back to system timezone.")
 
         logging.info("StreamDeckApp: Loading configuration files...")
         
@@ -153,7 +174,7 @@ class StreamDeckApp:
         elif device_type == "widget" and config.get("action_type") == "clock":
             # For clocks, the background thread handles periodic redraws, 
             # but we can do an initial placeholder render here.
-            now_str = datetime.now().strftime("%H:%M")
+            now_str = datetime.now(self.timezone).strftime("%H:%M")
             self.deck_mgr.update_button(
                 index=index,
                 label=label,
@@ -217,7 +238,7 @@ class StreamDeckApp:
                 self.update_button_state(index)
         elif action_type == "clock":
             # Interaction: Show date instead of time briefly upon pressing the clock widget
-            now_date = datetime.now().strftime("%d/%m")
+            now_date = datetime.now(self.timezone).strftime("%d/%m")
             logging.info(f"StreamDeckApp: Clock button pressed. Temporarily showing date: {now_date}")
             self.deck_mgr.update_button(
                 index=index,
@@ -260,7 +281,7 @@ class StreamDeckApp:
         logging.info("StreamDeckApp: Background Clock Widget Daemon started.")
         while self.running:
             try:
-                now_str = datetime.now().strftime("%H:%M")
+                now_str = datetime.now(self.timezone).strftime("%H:%M")
                 for index in self.clock_buttons:
                     config = self.buttons_config.get(index)
                     if config:
@@ -273,7 +294,7 @@ class StreamDeckApp:
                             text_override=now_str
                         )
                 # Calculate sleep duration to align with the next full minute (reduces USB overhead)
-                now = datetime.now()
+                now = datetime.now(self.timezone)
                 sleep_seconds = 60 - now.second - (now.microsecond / 1000000.0)
                 time.sleep(sleep_seconds)
             except Exception as e:
@@ -545,7 +566,7 @@ class StreamDeckApp:
             return False
 
         try:
-            now = datetime.now().time()
+            now = datetime.now(self.timezone).time()
             start = datetime.strptime(self.screen_sleep_start, "%H:%M").time()
             end = datetime.strptime(self.screen_sleep_end, "%H:%M").time()
 

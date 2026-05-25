@@ -149,6 +149,15 @@
     - [x] Update `start_service.sh` to point to `server/streamdeck.service`
     - [x] Reinstall and start service via `./start_service.sh` and verify daemon status
 
+- [x] **29. Timezone Integration for Clock Widget & Sleep Schedule**
+    - [x] Add `ZoneInfo` import and robust parsing of `TIMEZONE` env variable in `server/main.py`
+    - [x] Update `update_button_state` inside `server/main.py` to localize clock widget time
+    - [x] Update `on_button_press` inside `server/main.py` to localize pressed clock temporary date
+    - [x] Update `run_clock_daemon` loop inside `server/main.py` to localize periodic clock updates and tick sleep duration
+    - [x] Update `is_within_sleep_window` inside `server/main.py` to localize screen sleep schedules
+    - [x] Create `server/verify_timezone.py` testing suite to validate timezone parsing, adjustments, and system fallbacks
+    - [x] Run entire verification suite (`verify.py`, `verify_sleep.py`, `verify_timezone.py`) to prove correct functionality
+
 ## Results & Review
 
 ### Implementation Summary

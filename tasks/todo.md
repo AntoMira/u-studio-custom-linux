@@ -128,6 +128,27 @@
     - [x] Update `main.py` to instantiate service, process actions, and support interactive tap refresh
     - [x] Verify functionality via automated tests and simulator mode button image inspection
 
+- [x] **27. PC Performance Monitoring Widget (Windows Network Stats Integration)**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Create mock Windows client script `mock_pc_client.py` for network telemetry simulation
+    - [x] Bind UDP Broadcast Listener socket in `main.py` inside a background daemon thread
+    - [x] Implement rotation carousel logic in `main.py` (switching metric display every 5 seconds)
+    - [x] Update `deck_manager.py` to support premium geometric shapes for pc, cpu, gpu, ram, and disk widgets
+    - [x] Implement offline state detection (15-second socket timeout fallback)
+    - [x] Add config templates for `pc_monitor_port` and button index layout in `config.yaml`
+    - [x] Verify functionality via automated verification tests and simulator mode button image inspection
+
+- [ ] **28. Repository Reorganization (Server & Clients Specialization)**
+    - [ ] Create detailed implementation plan and obtain approval
+    - [ ] Stop systemd daemon using `./stop_service.sh`
+    - [ ] Create `server/` and `clients/windows/` directories
+    - [ ] Move server files (Python scripts, YAML configuration, requirements) into `server/`
+    - [ ] Move network performance stats client `mock_pc_client.py` into `clients/windows/`
+    - [ ] Update static absolute paths inside `server/main.py`, `server/deck_manager.py`, and `server/verify.py`
+    - [ ] Refactor `server/streamdeck.service` systemd paths
+    - [ ] Update `start_service.sh` to point to `server/streamdeck.service`
+    - [ ] Reinstall and start service via `./start_service.sh` and verify daemon status
+
 ## Results & Review
 
 ### Implementation Summary

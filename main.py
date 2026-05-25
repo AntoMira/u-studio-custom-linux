@@ -19,14 +19,16 @@ class StreamDeckApp:
     def __init__(self):
         # Single Instance Lock Enforcement
         self.lock_file_path = "/home/zee/code/streamdeck/app.lock"
-        try:
-            self.lock_file = open(self.lock_file_path, "w")
-            fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.lock_file.write(str(os.getpid()))
-            self.lock_file.flush()
-        except (IOError, BlockingIOError):
-            logging.error("StreamDeckApp: Another instance is already running. Aborting.")
-            sys.exit(1)
+        disable_lock = os.getenv("DISABLE_LOCK", "False").lower() in ("true", "1", "yes")
+        if not disable_lock:
+            try:
+                self.lock_file = open(self.lock_file_path, "w")
+                fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.lock_file.write(str(os.getpid()))
+                self.lock_file.flush()
+            except (IOError, BlockingIOError):
+                logging.error("StreamDeckApp: Another instance is already running. Aborting.")
+                sys.exit(1)
 
         # 1. Load environment configurations
         load_dotenv()
@@ -50,6 +52,10 @@ class StreamDeckApp:
         self.screen_sleep_end = "07:00"
         self.screen_sleep_timeout = 300
         self.last_activity_time = time.time()
+        self.pc_monitor_port = 9999
+        self.pc_stats = {}
+        self.pc_stats_last_update = 0
+        self.pc_monitor_buttons = []
         self.load_config()
 
         # 3. Initialize Controller & Deck Manager
@@ -102,6 +108,7 @@ class StreamDeckApp:
             self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")
             self.screen_sleep_end = config_data.get("screen_sleep_end", "07:00")
             self.screen_sleep_timeout = int(config_data.get("screen_sleep_timeout", 300))
+            self.pc_monitor_port = int(config_data.get("pc_monitor_port", 9999))
             
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
@@ -177,6 +184,16 @@ class StreamDeckApp:
                     min_temp=min_temp,
                     max_temp=max_temp
                 )
+        elif device_type == "widget" and config.get("action_type") == "pc_monitor":
+            self.deck_mgr.update_button(
+                index=index,
+                label=label,
+                device_type="widget",
+                is_on=False,
+                reachable=False,
+                icon_path="pc_monitor",
+                text_override="WAITING..."
+            )
 
     def on_button_press(self, index: int):
         """
@@ -356,15 +373,26 @@ class StreamDeckApp:
         # Draw initial button states
         for index in self.buttons_config:
             self.update_button_state(index)
-            # Identify buttons configured as clock widgets
+            # Identify widgets
             config = self.buttons_config.get(index)
-            if config and config.get("action_type") == "clock":
-                self.clock_buttons.append(index)
+            if config:
+                action_type = config.get("action_type")
+                if action_type == "clock":
+                    self.clock_buttons.append(index)
+                elif action_type == "pc_monitor":
+                    self.pc_monitor_buttons.append(index)
 
         # Start the clock widget background thread if there are any clock buttons
         if self.clock_buttons:
             clock_thread = threading.Thread(target=self.run_clock_daemon, daemon=True)
             clock_thread.start()
+
+        # Start the UDP Listener and PC Monitor carousel thread if pc_monitor buttons exist
+        if self.pc_monitor_buttons:
+            udp_thread = threading.Thread(target=self.run_udp_listener, daemon=True)
+            udp_thread.start()
+            pc_monitor_thread = threading.Thread(target=self.run_pc_monitor_daemon, daemon=True)
+            pc_monitor_thread.start()
 
         # Start the background state synchronization daemon thread
         sync_thread = threading.Thread(target=self.run_state_sync_daemon, daemon=True)
@@ -385,6 +413,121 @@ class StreamDeckApp:
             self.running = False
             self.deck_mgr.close()
             logging.info("StreamDeckApp: Application terminated safely.")
+
+    def run_udp_listener(self):
+        """
+        Background UDP broadcast listener thread. Receives PC performance metrics.
+        """
+        import socket
+        import json
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("", self.pc_monitor_port))
+            sock.settimeout(2.0)
+            logging.info(f"StreamDeckApp: Bound UDP Performance Listener on port {self.pc_monitor_port}")
+        except Exception as e:
+            logging.error(f"StreamDeckApp: Failed to bind UDP listener on port {self.pc_monitor_port}: {e}")
+            return
+
+        while self.running:
+            try:
+                data, addr = sock.recvfrom(2048)
+                payload = json.loads(data.decode("utf-8"))
+                if isinstance(payload, dict) and "pc_name" in payload:
+                    self.pc_stats = payload
+                    self.pc_stats_last_update = time.time()
+            except socket.timeout:
+                continue
+            except Exception as e:
+                logging.debug(f"StreamDeckApp: UDP parse error: {e}")
+                continue
+        sock.close()
+
+    def run_pc_monitor_daemon(self):
+        """
+        Daemon thread task updating any mapped pc_monitor widgets every 5 seconds,
+        rotating between CPU, GPU, RAM, and Disk metrics.
+        """
+        logging.info("StreamDeckApp: Background PC Monitor Carousel Daemon started.")
+        carousel_index = 0
+        while self.running:
+            try:
+                now = time.time()
+                is_online = (now - self.pc_stats_last_update) <= 15.0 and bool(self.pc_stats)
+
+                for index in self.pc_monitor_buttons:
+                    config = self.buttons_config.get(index)
+                    if not config:
+                        continue
+                    
+                    if not is_online:
+                        pc_name = self.pc_stats.get("pc_name", config.get("label", "PC Monitor")) if self.pc_stats else config.get("label", "PC Monitor")
+                        self.deck_mgr.update_button(
+                            index=index,
+                            label=pc_name,
+                            device_type="widget",
+                            is_on=False,
+                            reachable=False,
+                            text_override="OFFLINE",
+                            icon_path="pc_monitor"
+                        )
+                    else:
+                        pc_name = self.pc_stats.get("pc_name", "DESKTOP")
+                        if carousel_index == 0:
+                            usage = self.pc_stats.get("cpu_usage", 0.0)
+                            temp = self.pc_stats.get("cpu_temp")
+                            temp_str = f" ({int(temp)}°)" if temp is not None else ""
+                            status_text = f"CPU: {int(usage)}%{temp_str}"
+                            self.deck_mgr.update_button(
+                                index=index,
+                                label=pc_name,
+                                device_type="widget",
+                                is_on=True,
+                                icon_path="cpu",
+                                text_override=status_text
+                            )
+                        elif carousel_index == 1:
+                            usage = self.pc_stats.get("gpu_usage", 0.0)
+                            temp = self.pc_stats.get("gpu_temp")
+                            temp_str = f" ({int(temp)}°)" if temp is not None else ""
+                            status_text = f"GPU: {int(usage)}%{temp_str}"
+                            self.deck_mgr.update_button(
+                                index=index,
+                                label=pc_name,
+                                device_type="widget",
+                                is_on=True,
+                                icon_path="gpu",
+                                text_override=status_text
+                            )
+                        elif carousel_index == 2:
+                            usage = self.pc_stats.get("ram_usage", 0.0)
+                            status_text = f"RAM: {int(usage)}%"
+                            self.deck_mgr.update_button(
+                                index=index,
+                                label=pc_name,
+                                device_type="widget",
+                                is_on=True,
+                                icon_path="ram",
+                                text_override=status_text
+                            )
+                        elif carousel_index == 3:
+                            usage = self.pc_stats.get("disk_usage", 0.0)
+                            status_text = f"Disk: {int(usage)}%"
+                            self.deck_mgr.update_button(
+                                index=index,
+                                label=pc_name,
+                                device_type="widget",
+                                is_on=True,
+                                icon_path="disk",
+                                text_override=status_text
+                            )
+
+                carousel_index = (carousel_index + 1) % 4
+                time.sleep(5)
+            except Exception as e:
+                logging.error(f"StreamDeckApp: Error in PC Monitor Daemon: {e}")
+                time.sleep(5)
 
     def reset_activity_timer(self):
         """

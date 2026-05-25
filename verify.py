@@ -39,6 +39,9 @@ def test_config_parsing():
     assert "state_sync_interval" in config, "Missing 'state_sync_interval' root in config.yaml"
     assert isinstance(config["state_sync_interval"], int), "state_sync_interval must be an integer"
     assert config["state_sync_interval"] > 0, "state_sync_interval must be a positive integer greater than 0"
+    assert "pc_monitor_port" in config, "Missing 'pc_monitor_port' root in config.yaml"
+    assert isinstance(config["pc_monitor_port"], int), "pc_monitor_port must be an integer"
+    assert 1 <= config["pc_monitor_port"] <= 65535, "pc_monitor_port must be a valid port (1-65535)"
 
     print("✅ config.yaml safety validation passed successfully.")
 
@@ -162,6 +165,19 @@ def test_deck_manager_rendering():
         min_temp=29.0,
         max_temp=35.0
     )
+
+    # Render PC performance monitoring widgets to test geometry layouts
+    for shape in ("pc_monitor", "cpu", "gpu", "ram", "disk"):
+        manager.update_button(
+            index=2,
+            label="MY-PC",
+            device_type="widget",
+            is_on=True,
+            icon_path=shape,
+            text_override=f"{shape.upper()}: 50%"
+        )
+        target_path = os.path.join(manager.output_sim_dir, f"button_2.png")
+        assert os.path.exists(target_path), f"Simulated {shape} button image not saved"
     
     # Verify image output characteristics (online)
     target_path = os.path.join(manager.output_sim_dir, f"button_{test_btn_idx}.png")

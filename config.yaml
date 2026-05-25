@@ -42,6 +42,10 @@
 # screen_sleep_timeout:
 #   Inactivity duration in seconds before turning off screen backlight automatically.
 #   Value: Positive integer (default: 300 for 5 minutes), or 0 to disable inactivity sleep.
+#
+# pc_monitor_port:
+#   UDP port to listen for incoming Windows PC telemetry performance statistics packets.
+#   Value: Positive integer between 1 and 65535 (default: 9999).
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
@@ -53,6 +57,7 @@ state_sync_interval: 5  # Polling interval in seconds to sync device states from
 screen_sleep_start: "23:59"   # Start of screen sleep window (default: "22:00")
 screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
+pc_monitor_port: 9999       # UDP port to listen for Windows performance statistics (default: 9999)
 
 # ==============================================================================
 # BUTTON MAPPINGS
@@ -75,11 +80,12 @@ screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (defa
 #     Values:
 #       - "hue_toggle": Toggle power state of a Philips Hue light or smart plug (requires 'target')
 #       - "clock"     : Toggle display of high-precision current time/date widget
+#       - "pc_monitor": Toggle display of Windows PC performance stats (CPU, GPU, RAM, Disk)
 #
 # - target:
 #     The unique ID of the target device on the local Philips Hue Bridge.
 #     Value: String representing bridge light index (e.g., "1", "2").
-#     *Not required when action_type is "clock".
+#     *Not required when action_type is "clock" or "pc_monitor".
 #
 # - label:
 #     Text label shown at the top of the button key face.
@@ -90,7 +96,7 @@ screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (defa
 #     or a dynamic shape keyword to draw geometric icons if no physical file exists.
 #     Values:
 #       - Valid path relative to streamdeck folder (e.g., "assets/icons/clock.png")
-#       - Dynamic shape keywords: "light", "plug", "ceiling", "lamp", "3dprinter", "clock"
+#       - Dynamic shape keywords: "light", "plug", "ceiling", "lamp", "3dprinter", "clock", "pc_monitor", "cpu", "gpu", "ram", "disk"
 # ==============================================================================
 
 buttons:
@@ -114,6 +120,12 @@ buttons:
     target: "7"  # Replace with your actual Philips Hue Smart Plug ID
     label: "Impressora 3D"
     icon: "3dprinter"
+
+  - index: 9
+    device_type: "widget"
+    action_type: "pc_monitor"
+    label: "PC Stats"
+    icon: "pc_monitor"
 
   - index: 10
     device_type: "widget"

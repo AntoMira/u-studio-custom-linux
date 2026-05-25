@@ -359,7 +359,7 @@ class DeckManager:
             # Resolve the geometric shape to draw:
             # Check if icon_path is a known shape keyword, otherwise default to device_type
             shape_type = device_type
-            if icon_path in ("light", "plug", "ceiling", "lamp", "3dprinter", "clock"):
+            if icon_path in ("light", "plug", "ceiling", "lamp", "3dprinter", "clock", "pc_monitor", "cpu", "gpu", "ram", "disk"):
                 shape_type = icon_path
 
             center_x, center_y = width // 2, height // 2 - 10
@@ -414,6 +414,39 @@ class DeckManager:
                 draw.line([center_x, center_y + 3, center_x, center_y + 7], fill=fg_color, width=2)
                 # A 3D printed object outline resting on the bed
                 draw.rectangle([center_x - 8, center_y + 8, center_x + 8, center_y + 15], fill=None, outline=fg_color, width=2)
+            elif shape_type == "pc_monitor":
+                # Elegant PC Tower Case
+                draw.rectangle([center_x - 18, center_y - 25, center_x + 18, center_y + 25], fill=None, outline=fg_color, width=3)
+                draw.rectangle([center_x - 12, center_y - 20, center_x + 12, center_y + 12], fill=None, outline=fg_color, width=2)
+                draw.ellipse([center_x + 8, center_y + 18, center_x + 12, center_y + 22], fill=fg_color)
+                draw.line([center_x - 12, center_y + 18, center_x + 4, center_y + 18], fill=fg_color, width=2)
+            elif shape_type == "cpu":
+                # High-tech CPU Microchip outline with pin connectors
+                draw.rectangle([center_x - 18, center_y - 18, center_x + 18, center_y + 18], fill=None, outline=fg_color, width=3)
+                draw.rectangle([center_x - 8, center_y - 8, center_x + 8, center_y + 8], fill=fg_color)
+                for offset in [-12, 0, 12]:
+                    draw.line([center_x - 24, center_y + offset, center_x - 18, center_y + offset], fill=fg_color, width=2)
+                    draw.line([center_x + 18, center_y + offset, center_x + 24, center_y + offset], fill=fg_color, width=2)
+                    draw.line([center_x + offset, center_y - 24, center_x + offset, center_y - 18], fill=fg_color, width=2)
+                    draw.line([center_x + offset, center_y + 18, center_x + offset, center_y + 24], fill=fg_color, width=2)
+            elif shape_type == "gpu":
+                # High-end GPU board with cooler fans and PCIe connector
+                draw.rectangle([center_x - 28, center_y - 16, center_x + 28, center_y + 16], fill=None, outline=fg_color, width=3)
+                draw.ellipse([center_x - 18, center_y - 10, center_x - 2, center_y + 6], fill=None, outline=fg_color, width=2)
+                draw.ellipse([center_x + 2, center_y - 10, center_x + 18, center_y + 6], fill=None, outline=fg_color, width=2)
+                draw.line([center_x - 20, center_y + 20, center_x + 20, center_y + 20], fill=fg_color, width=3)
+            elif shape_type == "ram":
+                # RAM stick memory module with DRAM chips
+                draw.rectangle([center_x - 28, center_y - 10, center_x + 28, center_y + 10], fill=None, outline=fg_color, width=3)
+                for x_pos in [-20, -8, 4, 16]:
+                    draw.rectangle([center_x + x_pos, center_y - 6, center_x + x_pos + 6, center_y + 6], fill=fg_color)
+                draw.line([center_x - 28, center_y + 14, center_x + 28, center_y + 14], fill=fg_color, width=2)
+            elif shape_type == "disk":
+                # Elegant HDD disc platter and actuator arm
+                draw.rectangle([center_x - 18, center_y - 24, center_x + 18, center_y + 24], fill=None, outline=fg_color, width=3)
+                draw.ellipse([center_x - 14, center_y - 14, center_x + 14, center_y + 14], fill=None, outline=fg_color, width=2)
+                draw.ellipse([center_x - 3, center_y - 3, center_x + 3, center_y + 3], fill=fg_color)
+                draw.line([center_x + 10, center_y + 15, center_x + 2, center_y + 2], fill=fg_color, width=2)
             elif weather_type:
                 # Custom premium weather graphics
                 if weather_type == "clear":

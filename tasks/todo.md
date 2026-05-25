@@ -138,16 +138,16 @@
     - [x] Add config templates for `pc_monitor_port` and button index layout in `config.yaml`
     - [x] Verify functionality via automated verification tests and simulator mode button image inspection
 
-- [ ] **28. Repository Reorganization (Server & Clients Specialization)**
-    - [ ] Create detailed implementation plan and obtain approval
-    - [ ] Stop systemd daemon using `./stop_service.sh`
-    - [ ] Create `server/` and `clients/windows/` directories
-    - [ ] Move server files (Python scripts, YAML configuration, requirements) into `server/`
-    - [ ] Move network performance stats client `mock_pc_client.py` into `clients/windows/`
-    - [ ] Update static absolute paths inside `server/main.py`, `server/deck_manager.py`, and `server/verify.py`
-    - [ ] Refactor `server/streamdeck.service` systemd paths
-    - [ ] Update `start_service.sh` to point to `server/streamdeck.service`
-    - [ ] Reinstall and start service via `./start_service.sh` and verify daemon status
+- [x] **28. Repository Reorganization (Server & Clients Specialization)**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Stop systemd daemon using `./stop_service.sh`
+    - [x] Create `server/` and `clients/windows/` directories
+    - [x] Move server files (Python scripts, YAML configuration, requirements) into `server/`
+    - [x] Move network performance stats client `mock_pc_client.py` into `clients/windows/`
+    - [x] Update static absolute paths inside `server/main.py`, `server/deck_manager.py`, and `server/verify.py`
+    - [x] Refactor `server/streamdeck.service` systemd paths
+    - [x] Update `start_service.sh` to point to `server/streamdeck.service`
+    - [x] Reinstall and start service via `./start_service.sh` and verify daemon status
 
 ## Results & Review
 

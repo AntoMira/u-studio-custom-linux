@@ -11,9 +11,9 @@ echo "============================================================"
 echo "          INSTALLING STREAM DECK SYSTEMD SERVICE"
 echo "============================================================"
 
-# Check if service file exists in script directory
-if [ ! -f "$SCRIPT_DIR/$SERVICE_FILE" ]; then
-    echo "[-] Error: $SERVICE_FILE not found in $SCRIPT_DIR"
+# Check if service file exists in server directory
+if [ ! -f "$SCRIPT_DIR/server/$SERVICE_FILE" ]; then
+    echo "[-] Error: $SERVICE_FILE not found in $SCRIPT_DIR/server"
     exit 1
 fi
 
@@ -25,7 +25,7 @@ fi
 
 # Copy service file to systemd directory using sudo
 echo "[INFO] Copying service configuration to $TARGET_DIR..."
-sudo cp "$SCRIPT_DIR/$SERVICE_FILE" "$TARGET_DIR/$SERVICE_FILE"
+sudo cp "$SCRIPT_DIR/server/$SERVICE_FILE" "$TARGET_DIR/$SERVICE_FILE"
 
 # Reload systemd configuration
 echo "[INFO] Reloading systemd daemon..."

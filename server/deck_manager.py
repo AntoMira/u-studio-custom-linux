@@ -49,8 +49,8 @@ class DeckManager:
         self.has_hardware = not self.simulator_mode
         self.deck = None
         self.callbacks = []
-        self.output_sim_dir = "/home/zee/code/streamdeck/output_sim"
-        self.cache_dir = "/home/zee/code/streamdeck/.cache/icons/_generated"
+        self.output_sim_dir = "/home/zee/code/streamdeck/server/output_sim"
+        self.cache_dir = "/home/zee/code/streamdeck/server/.cache/icons/_generated"
         self.font_size_label = font_size_label
         self.font_size_status = font_size_status
         self.margin_label = margin_label

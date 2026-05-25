@@ -5,6 +5,7 @@ from PIL import Image
 
 from hue_controller import HueController
 from deck_manager import DeckManager
+from weather_service import WeatherService
 
 def test_config_parsing():
     """
@@ -116,6 +117,43 @@ def test_deck_manager_rendering():
         
     print("✅ DeckManager image rendering output checked successfully.")
 
+def test_weather_service():
+    """
+    Validates WeatherService aggregation, priorities, and mock structures.
+    """
+    print("Testing WeatherService logic and aggregation...")
+    service = WeatherService(api_key="", city="Sao Paulo,BR")
+    assert service.is_mock_mode() is True, "WeatherService should run in mock mode when API key is empty"
+    
+    # Test priority mapping
+    w_type, priority = service.get_weather_type_and_priority(201)
+    assert w_type == "thunderstorm" and priority == 5
+    
+    w_type, priority = service.get_weather_type_and_priority(800)
+    assert w_type == "clear" and priority == 0
+    
+    w_type, priority = service.get_weather_type_and_priority(501)
+    assert w_type == "rain" and priority == 4
+
+    # Test aggregate helper
+    records = [
+        {"main": {"temp_min": 15.0, "temp_max": 20.0}, "weather": [{"id": 800}]},  # clear
+        {"main": {"temp_min": 14.0, "temp_max": 22.0}, "weather": [{"id": 500}]},  # rain
+        {"main": {"temp_min": 16.0, "temp_max": 18.0}, "weather": [{"id": 801}]},  # clouds
+    ]
+    res = service._aggregate_day_records(records)
+    assert res["min_temp"] == 14.0, "Aggregated min temperature should be the minimum over all records"
+    assert res["max_temp"] == 22.0, "Aggregated max temperature should be the maximum over all records"
+    assert res["type"] == "rain", "Aggregated predominant type should prioritize severe/rain over clear/clouds"
+    
+    # Test mock forecast retrieval
+    data = service.get_weather_data()
+    assert "weather" in data and "weather+1" in data, "Weather data structure is missing today or tomorrow keys"
+    assert data["weather"]["type"] == "clear"
+    assert data["weather+1"]["type"] == "rain"
+    
+    print("✅ WeatherService validation checks passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -127,6 +165,8 @@ def run_tests():
         test_hue_controller_simulation()
         print("-"*60)
         test_deck_manager_rendering()
+        print("-"*60)
+        test_weather_service()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

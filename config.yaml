@@ -30,14 +30,29 @@
 # state_sync_interval:
 #   Background polling interval in seconds to sync device states from the Hue Bridge.
 #   Value: Any positive integer (default: 5).
+#
+# screen_sleep_start:
+#   Time of day to start automatically turning off the screen (in HH:MM format).
+#   Value: String (e.g., "22:00" for 10 PM), or "" to disable scheduled sleep.
+#
+# screen_sleep_end:
+#   Time of day to stop automatically turning off the screen (in HH:MM format).
+#   Value: String (e.g., "07:00" for 7 AM), or "" to disable scheduled sleep.
+#
+# screen_sleep_timeout:
+#   Inactivity duration in seconds before turning off screen backlight automatically.
+#   Value: Positive integer (default: 300 for 5 minutes), or 0 to disable inactivity sleep.
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
 font_size_status: 30    # Font size for the bottom status text (default: 10)
 margin_label: 10        # Top margin for the label (default: 10)
-margin_status: 45       # Bottom margin for the status text (default: 25)
+margin_status: 60       # Bottom margin for the status text (default: 25)
 small_window_mode: 1    # Small screen mode: 0 for Stats, 1 for Clock, 2 for Background
 state_sync_interval: 5  # Polling interval in seconds to sync device states from bridge (default: 5)
+screen_sleep_start: "24:00"   # Start of screen sleep window (default: "22:00")
+screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
+screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
 
 # ==============================================================================
 # BUTTON MAPPINGS
@@ -97,8 +112,19 @@ buttons:
     label: "Impressora 3D"
     icon: "assets/icons/coffee.png"
 
+  - index: 10
+    device_type: "widget"
+    action_type: "weather"
+    label: "Hoje"
+
+  - index: 11
+    device_type: "widget"
+    action_type: "weather+1"
+    label: "Amanha"
+
   - index: 12
     device_type: "widget"
     action_type: "clock"
     label: "Time"
     icon: "assets/icons/clock.png"
+

@@ -104,6 +104,30 @@
     - [x] Create stop_service.sh systemd service stopper script
     - [x] Make service scripts executable and verify service control flow
 
+- [x] **24. Visual Style Refactoring (White Text/Icons, Solid Background State Colors)**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Update `update_button` inside `deck_manager.py` with solid bg colors and white text/icons
+    - [x] Refactor icon image white-tinting channel logic in `deck_manager.py`
+    - [x] Run verification test suite `verify.py` and resolve any breaks
+    - [x] Run the application in simulator mode to generate new visual assets
+    - [x] Inspect regenerated PNG images in `output_sim/` to verify style correctness
+
+- [x] **25. Screen Auto Sleep & Wake Implementation**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Add configuration settings inside `config.yaml`
+    - [x] Add brightness set and keypress intercept wake logic inside `deck_manager.py`
+    - [x] Integrate inactivity and sleep time schedules inside `main.py`
+    - [x] Verify functionality via unit tests and simulator mode
+
+- [x] **26. Weather Widgets ("weather" & "weather+1")**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Add `OPENWEATHER_API_KEY` and `OPENWEATHER_CITY` to `.env.example`
+    - [x] Add example button config for `weather` and `weather+1` in `config.yaml`
+    - [x] Create `weather_service.py` with caching and priority-based grouping
+    - [x] Update `deck_manager.py` with custom high-contrast geometric weather drawings
+    - [x] Update `main.py` to instantiate service, process actions, and support interactive tap refresh
+    - [x] Verify functionality via automated tests and simulator mode button image inspection
+
 ## Results & Review
 
 ### Implementation Summary
@@ -122,6 +146,8 @@
 *   **Configurable Background Polling:** Added root-level configuration option `state_sync_interval` to `config.yaml` to dynamically customize the sleep duration of the device state sync daemon thread, fully integrated in `main.py` and validated via automated unit testing.
 *   **Firmware Cache Invalidation:** Implemented a timestamp-salted cache-busting filename mechanism for button icons inside `deck_manager.py` to bypass Ulanzi D200 hardware-level image caching, combined with automatic local cleanup of older icon assets.
 *   **Dynamic Status Colors (Green/Red/Gray):** Refactored `update_button()` in `deck_manager.py` to accept a `reachable` parameter and render dynamic, premium visual themes: active state (ON) renders status text in **green**, inactive state (OFF) renders status and borders in **red**, and unreachable/disconnected state (OFFLINE) renders text and borders in **gray**.
+*   **Visual Style Refactoring (White Text/Icons, Solid Backgrounds):** Updated `update_button()` in `deck_manager.py` to render all labels, statuses, and icons/drawings in white (`255, 255, 255`) and replaced outer glow borders with solid background fills representing current device states: solid dark green for active (ON), solid dark red for inactive (OFF), and solid black for disconnected devices, clock widgets, and all other buttons.
+*   **Screen Auto Sleep & Wake:** Added configuration settings (`screen_sleep_start`, `screen_sleep_end`, and `screen_sleep_timeout`) in `config.yaml` to specify a time-scheduled sleep window and inactivity timeout in seconds. Refactored `deck_manager.py` to support hardware backlight-off commands (setting brightness to `0`), intercept keypress events when asleep to wake the screen (restoring brightness to `80`), reset inactivity timers, and consume the first wake keypress to prevent accidental toggles in the dark. Fully validated via automated unit testing suite (`verify_sleep.py`).
 
 ### Test Results (`verify.py`)
 ```text
@@ -132,16 +158,17 @@ Testing config.yaml safety and parsing...
 ✅ config.yaml safety validation passed successfully.
 ------------------------------------------------------------
 Testing HueController simulation and toggles...
-2026-05-24 20:02:43,028 [INFO] HueController: Initialized in SIMULATOR MODE. No network requests will be made.
-2026-05-24 20:02:43,029 [INFO] HueController: Toggling Device 1 -> OFF
-2026-05-24 20:02:43,029 [INFO] HueController (SIM): Updated Light 1 state -> {'on': False}
-2026-05-24 20:02:43,029 [INFO] HueController: Toggling Device 3 -> ON
-2026-05-24 20:02:43,029 [INFO] HueController (SIM): Updated Light 3 state -> {'on': True}
+2026-05-25 01:34:37,555 [INFO] HueController: Initialized in SIMULATOR MODE. No network requests will be made.
+2026-05-25 01:34:37,555 [INFO] HueController: Toggling Device 1 -> OFF
+2026-05-25 01:34:37,555 [INFO] HueController (SIM): Updated Light 1 state -> {'on': False}
+2026-05-25 01:34:37,555 [INFO] HueController: Toggling Device 3 -> ON
+2026-05-25 01:34:37,555 [INFO] HueController (SIM): Updated Light 3 state -> {'on': True}
 ✅ HueController simulation checks passed successfully.
 ------------------------------------------------------------
 Testing DeckManager image rendering output...
-2026-05-24 20:02:43,029 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
-2026-05-24 20:02:43,043 [INFO] DeckManager (SIM): Saved button 9 screen to -> /home/zee/code/streamdeck/output_sim/button_9.png
+2026-05-25 01:34:37,555 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
+2026-05-25 01:34:37,565 [INFO] DeckManager (SIM): Saved button 9 screen to -> /home/zee/code/streamdeck/output_sim/button_9.png
+2026-05-25 01:34:37,567 [INFO] DeckManager (SIM): Saved button 8 screen to -> /home/zee/code/streamdeck/output_sim/button_8.png
 ✅ DeckManager image rendering output checked successfully.
 ============================================================
 🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!

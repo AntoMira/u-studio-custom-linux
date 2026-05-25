@@ -26,6 +26,8 @@ class DeckManager:
         self.margin_status = margin_status
         self.small_window_mode = small_window_mode
         os.makedirs(self.cache_dir, exist_ok=True)
+        self.screen_on = True
+        self.wake_callback = None
 
         if self.simulator_mode:
             logging.info("DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/")
@@ -141,6 +143,27 @@ class DeckManager:
         """
         self.callbacks.append(callback)
 
+    def register_wake_callback(self, callback):
+        """
+        Registers a callback function to handle screen wake events.
+        """
+        self.wake_callback = callback
+
+    def set_screen_brightness(self, brightness: int):
+        """
+        Sets screen brightness thread-safely (brightness range 0-100).
+        """
+        logging.info(f"DeckManager: Setting screen brightness to {brightness}%")
+        if self.simulator_mode:
+            logging.info(f"DeckManager (SIM): Screen brightness updated to {brightness}%")
+            return
+
+        if self.deck and self.has_hardware:
+            try:
+                self.loop.call_soon_threadsafe(self.deck.set_brightness, brightness, True)
+            except Exception as e:
+                logging.error(f"DeckManager: Failed to write screen brightness to hardware: {e}")
+
     def _trigger_callbacks(self, button_index: int):
         """
         Triggers all registered button callbacks safely.
@@ -158,6 +181,17 @@ class DeckManager:
         """
         if pressed:
             logging.info(f"DeckManager: Hardware Key Pressed: {key_index}")
+            if not self.screen_on:
+                self.screen_on = True
+                self.set_screen_brightness(80)
+                logging.info("DeckManager: Intercepted keypress to wake up the screen. Consumed press.")
+                if self.wake_callback:
+                    try:
+                        self.wake_callback()
+                    except Exception as e:
+                        logging.error(f"DeckManager: Error in wake callback: {e}")
+                return # Discard this keypress!
+
             self._trigger_callbacks(key_index)
 
     def simulate_press(self, button_index: int):
@@ -165,9 +199,20 @@ class DeckManager:
         Triggered in Simulator Mode to emulate pressing a button.
         """
         logging.info(f"DeckManager (SIM): Emulating button press for index: {button_index}")
+        if not self.screen_on:
+            self.screen_on = True
+            self.set_screen_brightness(80)
+            logging.info("DeckManager (SIM): Intercepted simulated keypress to wake up the screen. Consumed press.")
+            if self.wake_callback:
+                try:
+                    self.wake_callback()
+                except Exception as e:
+                    logging.error(f"DeckManager: Error in wake callback: {e}")
+            return # Discard simulated press!
+
         self._trigger_callbacks(button_index)
 
-    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True):
+    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
         * index: Button index (0 to 12)
@@ -178,6 +223,7 @@ class DeckManager:
         * icon_path: Optional path to a base icon PNG
         * text_override: For widgets like clocks to display time directly (e.g., "15:20")
         * reachable: True if the device is connected and responding, False otherwise
+        * weather_type: 'clear', 'clouds', 'rain', 'thunderstorm', 'snow', or 'mist'
         """
         # Validate button index
         if index < 0 or index > 12:
@@ -196,47 +242,22 @@ class DeckManager:
         if margin_status is None:
             margin_status = self.margin_status
 
-        # 1. Create a blank 196x196 image
-        width, height = 196, 196
-        img = Image.new("RGB", (width, height), color=(15, 15, 15)) # Ultra-premium dark background
-        draw = ImageDraw.Draw(img)
-
-        # 2. Determine Color Palette based on State and Reachability
+        # 1. Determine Background Color based on State, Reachability, and Device Type
         if not reachable:
-            glow_color = (55, 71, 79) # Charcoal Gray
-            accent_color = (120, 144, 156) # Cool Slate Gray
-            status_color = (120, 144, 156) # Cool Slate Gray
-            
-            # Draw subtle dim border (skipped for widgets)
-            if device_type != "widget":
-                draw.rectangle([0, 0, width-1, height-1], outline=glow_color, width=2)
+            bg_color = (0, 0, 0)          # Black for disconnected
+        elif device_type == "widget":
+            bg_color = (0, 0, 0)          # Black for clock/widgets
         elif is_on:
-            # Elegant warm yellow/orange glow for lights, turquoise for plugs, soft blue for clock
-            if device_type == "light":
-                glow_color = (255, 193, 7) # Warm Amber
-                accent_color = (255, 235, 59)
-            elif device_type == "plug":
-                glow_color = (0, 150, 136) # Cool Teal
-                accent_color = (128, 203, 196)
-            else:
-                glow_color = (33, 150, 243) # Soft Blue
-                accent_color = (144, 202, 249)
-            
-            # Vibrant premium green for active status
-            status_color = (76, 175, 80)
-            
-            # Draw subtle glowing border (skipped for widgets)
-            if device_type != "widget":
-                draw.rectangle([0, 0, width-1, height-1], outline=glow_color, width=4)
+            bg_color = (0, 70, 0)         # Dark Green for ON state
         else:
-            # Premium dark red glow for OFF state, coral red for OFF status
-            glow_color = (183, 28, 28) # Dark Red
-            accent_color = (229, 115, 115) # Light Coral Red
-            status_color = (244, 67, 54) # Coral Red
-            
-            # Draw subtle dim border (skipped for widgets)
-            if device_type != "widget":
-                draw.rectangle([0, 0, width-1, height-1], outline=glow_color, width=2)
+            bg_color = (70, 0, 0)         # Dark Red for OFF state
+
+        fg_color = (255, 255, 255)        # Always white for text, icons, and drawings
+
+        # 2. Create a blank 196x196 image with the determined background color
+        width, height = 196, 196
+        img = Image.new("RGB", (width, height), color=bg_color)
+        draw = ImageDraw.Draw(img)
 
         # 3. Render base icon (or default geometric symbol)
         icon_drawn = False
@@ -250,10 +271,14 @@ class DeckManager:
                     # Scale down the icon beautifully to fit in center (90x90)
                     icon_img = icon_img.resize((80, 80), Image.Resampling.LANCZOS)
                     
-                    # Apply color tint if off to look premium
-                    if not is_on:
-                        # Convert to grayscale and apply dim overlay
-                        icon_img = icon_img.convert("L").convert("RGBA")
+                    # Convert the icon to always white (texts and icons are always white)
+                    # By extracting alpha channel and building a solid white image with that alpha
+                    if "A" in icon_img.mode:
+                        r, g, b, a = icon_img.split()
+                    else:
+                        a = icon_img.convert("L")
+                    white_channel = Image.new("L", icon_img.size, 255)
+                    icon_img = Image.merge("RGBA", (white_channel, white_channel, white_channel, a))
                     
                     # Paste in the center
                     paste_x = (width - 80) // 2
@@ -269,21 +294,79 @@ class DeckManager:
             r = 30
             if device_type == "light":
                 # Draw lightbulb outline/circle
-                draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=accent_color, width=3)
+                draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=fg_color, width=3)
                 # Small filament
-                draw.line([center_x, center_y - 10, center_x, center_y + 10], fill=accent_color, width=3)
+                draw.line([center_x, center_y - 10, center_x, center_y + 10], fill=fg_color, width=3)
             elif device_type == "plug":
                 # Draw plug rectangular shape
-                draw.rectangle([center_x - r + 10, center_y - r + 15, center_x + r - 10, center_y + r - 5], fill=None, outline=accent_color, width=3)
+                draw.rectangle([center_x - r + 10, center_y - r + 15, center_x + r - 10, center_y + r - 5], fill=None, outline=fg_color, width=3)
                 # Two prongs
-                draw.line([center_x - 10, center_y - r, center_x - 10, center_y - r + 15], fill=accent_color, width=3)
-                draw.line([center_x + 10, center_y - r, center_x + 10, center_y - r + 15], fill=accent_color, width=3)
+                draw.line([center_x - 10, center_y - r, center_x - 10, center_y - r + 15], fill=fg_color, width=3)
+                draw.line([center_x + 10, center_y - r, center_x + 10, center_y - r + 15], fill=fg_color, width=3)
+            elif weather_type:
+                # Custom premium weather graphics
+                if weather_type == "clear":
+                    # Draw a glowing sun
+                    sun_r = 18
+                    draw.ellipse([center_x - sun_r, center_y - sun_r, center_x + sun_r, center_y + sun_r], fill=None, outline=fg_color, width=3)
+                    # 8 radiating rays
+                    import math
+                    ray_len = 8
+                    for angle in range(0, 360, 45):
+                        rad = math.radians(angle)
+                        x1 = center_x + (sun_r + 4) * math.cos(rad)
+                        y1 = center_y + (sun_r + 4) * math.sin(rad)
+                        x2 = center_x + (sun_r + 4 + ray_len) * math.cos(rad)
+                        y2 = center_y + (sun_r + 4 + ray_len) * math.sin(rad)
+                        draw.line([x1, y1, x2, y2], fill=fg_color, width=2)
+                elif weather_type == "clouds":
+                    # Fluffy Cloud shape
+                    draw.ellipse([center_x - 22, center_y - 5, center_x - 5, center_y + 12], fill=fg_color)
+                    draw.ellipse([center_x - 13, center_y - 18, center_x + 13, center_y + 12], fill=fg_color)
+                    draw.ellipse([center_x + 5, center_y - 5, center_x + 22, center_y + 12], fill=fg_color)
+                    draw.rectangle([center_x - 18, center_y + 3, center_x + 18, center_y + 12], fill=fg_color)
+                elif weather_type == "rain":
+                    # Cloud with raindrops
+                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+                    # Raindrops
+                    draw.line([center_x - 10, center_y + 13, center_x - 13, center_y + 21], fill=fg_color, width=2)
+                    draw.line([center_x, center_y + 13, center_x - 3, center_y + 21], fill=fg_color, width=2)
+                    draw.line([center_x + 10, center_y + 13, center_x + 7, center_y + 21], fill=fg_color, width=2)
+                elif weather_type == "thunderstorm":
+                    # Cloud with lightning bolt
+                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+                    # Lightning zigzag
+                    draw.line([center_x + 3, center_y + 11, center_x - 3, center_y + 17], fill=fg_color, width=2)
+                    draw.line([center_x - 3, center_y + 17, center_x + 2, center_y + 17], fill=fg_color, width=2)
+                    draw.line([center_x + 2, center_y + 17, center_x - 3, center_y + 24], fill=fg_color, width=2)
+                elif weather_type == "snow":
+                    # Cloud with snow crosses
+                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+                    # Snowflake crosses
+                    draw.line([center_x - 10, center_y + 15, center_x - 6, center_y + 15], fill=fg_color, width=2)
+                    draw.line([center_x - 8, center_y + 13, center_x - 8, center_y + 17], fill=fg_color, width=2)
+                    draw.line([center_x + 8, center_y + 15, center_x + 4, center_y + 15], fill=fg_color, width=2)
+                    draw.line([center_x + 6, center_y + 13, center_x + 6, center_y + 17], fill=fg_color, width=2)
+                elif weather_type == "mist":
+                    # Horizontal fog/breeze lines
+                    draw.rectangle([center_x - 22, center_y - 9, center_x + 22, center_y - 6], fill=fg_color)
+                    draw.rectangle([center_x - 13, center_y - 2, center_x + 18, center_y + 1], fill=fg_color)
+                    draw.rectangle([center_x - 18, center_y + 5, center_x + 13, center_y + 8], fill=fg_color)
             else:
                 # Clock dial
-                draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=accent_color, width=3)
+                draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=fg_color, width=3)
                 # Hands
-                draw.line([center_x, center_y, center_x, center_y - r + 10], fill=accent_color, width=2)
-                draw.line([center_x, center_y, center_x + r - 12, center_y], fill=accent_color, width=2)
+                draw.line([center_x, center_y, center_x, center_y - r + 10], fill=fg_color, width=2)
+                draw.line([center_x, center_y, center_x + r - 12, center_y], fill=fg_color, width=2)
 
         # 4. Render Label Text (at the top)
         # Using PIL default font scaled dynamically
@@ -291,7 +374,7 @@ class DeckManager:
         
         # Draw label
         label_w = draw.textlength(label, font=font_label)
-        draw.text(((width - label_w) // 2, margin_label), label, fill=accent_color, font=font_label)
+        draw.text(((width - label_w) // 2, margin_label), label, fill=fg_color, font=font_label)
 
         # 5. Render Status / Value Text (at the bottom)
         if not reachable:
@@ -309,7 +392,7 @@ class DeckManager:
         font_status = ImageFont.load_default(size=font_size_status)
         status_w = draw.textlength(status_text, font=font_status)
         # Calculate vertically centered bottom offset relative to text height to prevent cutoff
-        draw.text(((width - status_w) // 2, height - margin_status), status_text, fill=status_color, font=font_status)
+        draw.text(((width - status_w) // 2, height - margin_status), status_text, fill=fg_color, font=font_status)
 
         # 6. Save or push the rendering
         if self.simulator_mode:

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from hue_controller import HueController
 from deck_manager import DeckManager
+from weather_service import WeatherService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -45,6 +46,10 @@ class StreamDeckApp:
         self.margin_status = 25
         self.small_window_mode = 0
         self.state_sync_interval = 5
+        self.screen_sleep_start = "22:00"
+        self.screen_sleep_end = "07:00"
+        self.screen_sleep_timeout = 300
+        self.last_activity_time = time.time()
         self.load_config()
 
         # 3. Initialize Controller & Deck Manager
@@ -52,6 +57,12 @@ class StreamDeckApp:
             bridge_ip=self.bridge_ip, 
             username=self.username, 
             simulator_mode=self.simulator_mode
+        )
+        self.openweather_api_key = os.getenv("OPENWEATHER_API_KEY", "")
+        self.openweather_city = os.getenv("OPENWEATHER_CITY", "Sao Paulo,BR")
+        self.weather_service = WeatherService(
+            api_key=self.openweather_api_key,
+            city=self.openweather_city
         )
         self.deck_mgr = DeckManager(
             simulator_mode=self.simulator_mode,
@@ -62,6 +73,9 @@ class StreamDeckApp:
             small_window_mode=self.small_window_mode
         )
         
+        # Register a callback to reset activity timer when screen is woken up
+        self.deck_mgr.register_wake_callback(self.reset_activity_timer)
+
         # Keep track of active clock widgets
         self.clock_buttons = []
         self.running = True
@@ -85,6 +99,9 @@ class StreamDeckApp:
             self.margin_status = config_data.get("margin_status", 25)
             self.small_window_mode = config_data.get("small_window_mode", 0)
             self.state_sync_interval = int(config_data.get("state_sync_interval", 5))
+            self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")
+            self.screen_sleep_end = config_data.get("screen_sleep_end", "07:00")
+            self.screen_sleep_timeout = int(config_data.get("screen_sleep_timeout", 300))
             
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
@@ -138,11 +155,32 @@ class StreamDeckApp:
                 icon_path=icon,
                 text_override=now_str
             )
+        elif device_type == "widget" and config.get("action_type") in ("weather", "weather+1"):
+            action = config.get("action_type")
+            weather_data = self.weather_service.get_weather_data()
+            day_data = weather_data.get(action)
+            if day_data:
+                min_temp = day_data["min_temp"]
+                max_temp = day_data["max_temp"]
+                w_type = day_data["type"]
+                
+                # Format: min°/max° (e.g. 18°/26°)
+                temp_str = f"{int(round(min_temp))}°/{int(round(max_temp))}°"
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon,
+                    text_override=temp_str,
+                    weather_type=w_type
+                )
 
     def on_button_press(self, index: int):
         """
         Callback handler called by DeckManager when a D200 button is pressed.
         """
+        self.reset_activity_timer()
         config = self.buttons_config.get(index)
         if not config:
             logging.warning(f"StreamDeckApp: Pressed unconfigured button index: {index}")
@@ -172,6 +210,27 @@ class StreamDeckApp:
             )
             # Spawn a timer thread to revert back to clock time after 3 seconds
             threading.Timer(3.0, self.update_button_state, args=[index]).start()
+        elif action_type in ("weather", "weather+1"):
+            logging.info(f"StreamDeckApp: Weather button {index} pressed. Force-refreshing weather data...")
+            # Temporarily show REFRESHING... feedback
+            self.deck_mgr.update_button(
+                index=index,
+                label=config.get("label", ""),
+                device_type="widget",
+                is_on=True,
+                icon_path=config.get("icon"),
+                text_override="REFRESHING..."
+            )
+            self.weather_service.clear_cache()
+            
+            # Spawn a background thread to re-fetch and paint both buttons
+            def do_refresh():
+                self.weather_service.get_weather_data()
+                for w_idx, w_config in self.buttons_config.items():
+                    if w_config.get("device_type") == "widget" and w_config.get("action_type") in ("weather", "weather+1"):
+                        self.update_button_state(w_idx)
+                        
+            threading.Thread(target=do_refresh, daemon=True).start()
         else:
             logging.warning(f"StreamDeckApp: Action type '{action_type}' is not supported or missing target.")
 
@@ -210,37 +269,41 @@ class StreamDeckApp:
         logging.info("StreamDeckApp: Background State Sync Daemon started.")
         while self.running:
             try:
+                # Check and apply screen auto sleep logic
+                self.check_screen_sleep()
+
                 # Query all lights in a single network request to minimize bridge latency
                 all_devices = self.hue.list_devices()
-                if all_devices:
-                    for index, config in self.buttons_config.items():
-                        device_type = config.get("device_type")
-                        if device_type in ("light", "plug"):
-                            target_id = config.get("target")
-                            if target_id and target_id in all_devices:
-                                device_data = all_devices[target_id]
+                for index, config in self.buttons_config.items():
+                    device_type = config.get("device_type")
+                    if device_type in ("light", "plug") and all_devices:
+                        target_id = config.get("target")
+                        if target_id and target_id in all_devices:
+                            device_data = all_devices[target_id]
+                            
+                            # Extract state safely supporting both real Hue API and Simulator mock schema
+                            if "state" in device_data:
+                                state = device_data["state"]
+                            else:
+                                state = device_data
                                 
-                                # Extract state safely supporting both real Hue API and Simulator mock schema
-                                if "state" in device_data:
-                                    state = device_data["state"]
-                                else:
-                                    state = device_data
-                                    
-                                is_on = state.get("on", False)
-                                reachable = state.get("reachable", True)
-                                brightness = state.get("bri") if device_type == "light" else None
-                                brightness_pct = int((brightness / 254.0) * 100) if brightness is not None else None
-                                
-                                # Push redraw to display
-                                self.deck_mgr.update_button(
-                                    index=index,
-                                    label=config.get("label", ""),
-                                    device_type=device_type,
-                                    is_on=is_on,
-                                    brightness=brightness_pct,
-                                    icon_path=config.get("icon"),
-                                    reachable=reachable
-                                )
+                            is_on = state.get("on", False)
+                            reachable = state.get("reachable", True)
+                            brightness = state.get("bri") if device_type == "light" else None
+                            brightness_pct = int((brightness / 254.0) * 100) if brightness is not None else None
+                            
+                            # Push redraw to display
+                            self.deck_mgr.update_button(
+                                index=index,
+                                label=config.get("label", ""),
+                                device_type=device_type,
+                                is_on=is_on,
+                                brightness=brightness_pct,
+                                icon_path=config.get("icon"),
+                                reachable=reachable
+                            )
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather+1"):
+                        self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)
             except Exception as e:
@@ -320,6 +383,75 @@ class StreamDeckApp:
             self.running = False
             self.deck_mgr.close()
             logging.info("StreamDeckApp: Application terminated safely.")
+
+    def reset_activity_timer(self):
+        """
+        Resets the last user activity timestamp to keep the screen awake.
+        """
+        self.last_activity_time = time.time()
+        logging.info("StreamDeckApp: User activity detected. Resetting sleep timer.")
+
+    def is_within_sleep_window(self) -> bool:
+        """
+        Helper method to check if the current time is within the sleep schedule.
+        Supports time windows that span across midnight (e.g., 22:00 to 07:00).
+        """
+        if not self.screen_sleep_start or not self.screen_sleep_end:
+            return False
+
+        try:
+            now = datetime.now().time()
+            start = datetime.strptime(self.screen_sleep_start, "%H:%M").time()
+            end = datetime.strptime(self.screen_sleep_end, "%H:%M").time()
+
+            if start <= end:
+                # Same day window (e.g., 14:00 to 18:00)
+                return start <= now <= end
+            else:
+                # Window spans midnight (e.g., 22:00 to 07:00)
+                return now >= start or now <= end
+        except Exception as e:
+            logging.error(f"StreamDeckApp: Error parsing sleep schedule times: {e}")
+            return False
+
+    def check_screen_sleep(self):
+        """
+        Evaluation routine to automatically check and apply Screen Auto-Sleep.
+        """
+        # 1. If screen auto-sleep is fully disabled globally, do nothing
+        if self.screen_sleep_timeout == 0 and not (self.screen_sleep_start and self.screen_sleep_end):
+            return
+
+        now = time.time()
+        inactivity_seconds = now - self.last_activity_time
+        in_sleep_window = self.is_within_sleep_window()
+
+        # Determine if the screen should be off
+        should_sleep = False
+
+        if self.screen_sleep_timeout > 0:
+            has_window = bool(self.screen_sleep_start and self.screen_sleep_end)
+            if has_window:
+                if in_sleep_window and inactivity_seconds >= self.screen_sleep_timeout:
+                    should_sleep = True
+            else:
+                if inactivity_seconds >= self.screen_sleep_timeout:
+                    should_sleep = True
+
+        # 2. Apply state transitions
+        if should_sleep:
+            if self.deck_mgr.screen_on:
+                logging.info(f"StreamDeckApp: Auto-sleep triggered (idle for {int(inactivity_seconds)}s). Turning screen OFF.")
+                self.deck_mgr.screen_on = False
+                self.deck_mgr.set_screen_brightness(0)
+        else:
+            # If the screen should be ON but is currently OFF:
+            if not self.deck_mgr.screen_on:
+                has_window = bool(self.screen_sleep_start and self.screen_sleep_end)
+                if has_window and not in_sleep_window:
+                    logging.info("StreamDeckApp: Outside sleep window. Ensuring screen is ON.")
+                    self.deck_mgr.screen_on = True
+                    self.deck_mgr.set_screen_brightness(80)
 
 if __name__ == "__main__":
     app = StreamDeckApp()

@@ -86,8 +86,11 @@ screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (defa
 #     Value: Any string (e.g., "Time", "Ceiling Light").
 #
 # - icon:
-#     Local path to a customized PNG icon file to overlay on the button center.
-#     Value: Valid path relative to streamdeck folder (e.g., "assets/icons/clock.png").
+#     Local path to a customized PNG icon file to overlay on the button center,
+#     or a dynamic shape keyword to draw geometric icons if no physical file exists.
+#     Values:
+#       - Valid path relative to streamdeck folder (e.g., "assets/icons/clock.png")
+#       - Dynamic shape keywords: "light", "plug", "ceiling", "lamp", "3dprinter", "clock"
 # ==============================================================================
 
 buttons:
@@ -96,21 +99,21 @@ buttons:
     action_type: "hue_toggle"
     target: "5"  # Replace with your actual Philips Hue Bulb ID
     label: "Luz Teto"
-    icon: "assets/icons/ceiling.png"
+    icon: "ceiling"
 
   - index: 1
     device_type: "light"
     action_type: "hue_toggle"
     target: "2"  # Replace with your actual Philips Hue Bulb ID
     label: "Luz Mesa"
-    icon: "assets/icons/desk.png"
+    icon: "lamp"
 
   - index: 2
     device_type: "plug"
     action_type: "hue_toggle"
     target: "7"  # Replace with your actual Philips Hue Smart Plug ID
     label: "Impressora 3D"
-    icon: "assets/icons/coffee.png"
+    icon: "3dprinter"
 
   - index: 10
     device_type: "widget"
@@ -126,5 +129,4 @@ buttons:
     device_type: "widget"
     action_type: "clock"
     label: "Time"
-    icon: "assets/icons/clock.png"
-
+    icon: "clock"

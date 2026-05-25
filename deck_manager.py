@@ -292,17 +292,66 @@ class DeckManager:
         if not icon_drawn:
             center_x, center_y = width // 2, height // 2 - 10
             r = 30
-            if device_type == "light":
+        # Fallback geometric shapes if no icon image was loaded
+        if not icon_drawn:
+            # Resolve the geometric shape to draw:
+            # Check if icon_path is a known shape keyword, otherwise default to device_type
+            shape_type = device_type
+            if icon_path in ("light", "plug", "ceiling", "lamp", "3dprinter", "clock"):
+                shape_type = icon_path
+
+            center_x, center_y = width // 2, height // 2 - 10
+            r = 30
+            if shape_type == "light":
                 # Draw lightbulb outline/circle
                 draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=fg_color, width=3)
                 # Small filament
                 draw.line([center_x, center_y - 10, center_x, center_y + 10], fill=fg_color, width=3)
-            elif device_type == "plug":
+            elif shape_type == "ceiling":
+                # Modern ceiling light fixture (canopy, stem, dome, and radiating light rays)
+                # Ceiling canopy line
+                draw.line([center_x - 25, center_y - 25, center_x + 25, center_y - 25], fill=fg_color, width=3)
+                # Stem hanging down
+                draw.line([center_x, center_y - 25, center_x, center_y - 12], fill=fg_color, width=3)
+                # Dome/Half-circle shade
+                draw.arc([center_x - 20, center_y - 12, center_x + 20, center_y + 12], start=180, end=360, fill=fg_color, width=3)
+                # Close the shade bottom
+                draw.line([center_x - 20, center_y, center_x + 20, center_y], fill=fg_color, width=3)
+                # Radiating light rays underneath
+                draw.line([center_x - 10, center_y + 8, center_x - 15, center_y + 20], fill=fg_color, width=2)
+                draw.line([center_x, center_y + 10, center_x, center_y + 24], fill=fg_color, width=2)
+                draw.line([center_x + 10, center_y + 8, center_x + 15, center_y + 20], fill=fg_color, width=2)
+            elif shape_type == "lamp":
+                # Elegant desk lamp/lampshade
+                # Trapezoidal shade outline
+                draw.line([center_x - 15, center_y - 20, center_x + 15, center_y - 20], fill=fg_color, width=3)
+                draw.line([center_x - 25, center_y, center_x + 25, center_y], fill=fg_color, width=3)
+                draw.line([center_x - 15, center_y - 20, center_x - 25, center_y], fill=fg_color, width=3)
+                draw.line([center_x + 15, center_y - 20, center_x + 25, center_y], fill=fg_color, width=3)
+                # Stem
+                draw.line([center_x, center_y, center_x, center_y + 22], fill=fg_color, width=3)
+                # Base
+                draw.line([center_x - 15, center_y + 22, center_x + 15, center_y + 22], fill=fg_color, width=3)
+            elif shape_type == "plug":
                 # Draw plug rectangular shape
                 draw.rectangle([center_x - r + 10, center_y - r + 15, center_x + r - 10, center_y + r - 5], fill=None, outline=fg_color, width=3)
                 # Two prongs
                 draw.line([center_x - 10, center_y - r, center_x - 10, center_y - r + 15], fill=fg_color, width=3)
                 draw.line([center_x + 10, center_y - r, center_x + 10, center_y - r + 15], fill=fg_color, width=3)
+            elif shape_type == "3dprinter":
+                # Sleek, minimalist 3D printer outline
+                # Outer rectangular frame / gantry
+                draw.rectangle([center_x - 25, center_y - 25, center_x + 25, center_y + 25], fill=None, outline=fg_color, width=3)
+                # Build bed / plate
+                draw.line([center_x - 20, center_y + 15, center_x + 20, center_y + 15], fill=fg_color, width=3)
+                # X-axis rail/gantry
+                draw.line([center_x - 25, center_y - 5, center_x + 25, center_y - 5], fill=fg_color, width=2)
+                # Printhead / extruder box
+                draw.rectangle([center_x - 5, center_y - 5, center_x + 5, center_y + 3], fill=fg_color)
+                # Extruding nozzle tip
+                draw.line([center_x, center_y + 3, center_x, center_y + 7], fill=fg_color, width=2)
+                # A 3D printed object outline resting on the bed
+                draw.rectangle([center_x - 8, center_y + 8, center_x + 8, center_y + 15], fill=None, outline=fg_color, width=2)
             elif weather_type:
                 # Custom premium weather graphics
                 if weather_type == "clear":

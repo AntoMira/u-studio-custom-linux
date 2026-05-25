@@ -102,6 +102,41 @@ def test_deck_manager_rendering():
         reachable=False
     )
     
+    # Render ceiling test button
+    test_ceiling_idx = 7
+    manager.update_button(
+        index=test_ceiling_idx,
+        label="Ceiling Light",
+        device_type="light",
+        is_on=True,
+        brightness=75,
+        icon_path="ceiling",
+        reachable=True
+    )
+
+    # Render lamp test button
+    test_lamp_idx = 6
+    manager.update_button(
+        index=test_lamp_idx,
+        label="Desk Lamp",
+        device_type="light",
+        is_on=True,
+        brightness=50,
+        icon_path="lamp",
+        reachable=True
+    )
+
+    # Render 3dprinter test button
+    test_printer_idx = 5
+    manager.update_button(
+        index=test_printer_idx,
+        label="3D Printer",
+        device_type="plug",
+        is_on=True,
+        icon_path="3dprinter",
+        reachable=True
+    )
+    
     # Verify image output characteristics (online)
     target_path = os.path.join(manager.output_sim_dir, f"button_{test_btn_idx}.png")
     assert os.path.exists(target_path), f"Simulated button image not saved to {target_path}"
@@ -109,6 +144,18 @@ def test_deck_manager_rendering():
     # Verify image output characteristics (offline)
     target_path_offline = os.path.join(manager.output_sim_dir, f"button_{test_btn_offline_idx}.png")
     assert os.path.exists(target_path_offline), f"Simulated offline button image not saved to {target_path_offline}"
+
+    # Verify image output characteristics (ceiling)
+    target_path_ceiling = os.path.join(manager.output_sim_dir, f"button_{test_ceiling_idx}.png")
+    assert os.path.exists(target_path_ceiling), f"Simulated ceiling button image not saved to {target_path_ceiling}"
+
+    # Verify image output characteristics (lamp)
+    target_path_lamp = os.path.join(manager.output_sim_dir, f"button_{test_lamp_idx}.png")
+    assert os.path.exists(target_path_lamp), f"Simulated lamp button image not saved to {target_path_lamp}"
+
+    # Verify image output characteristics (3dprinter)
+    target_path_printer = os.path.join(manager.output_sim_dir, f"button_{test_printer_idx}.png")
+    assert os.path.exists(target_path_printer), f"Simulated printer button image not saved to {target_path_printer}"
     
     with Image.open(target_path) as img:
         assert img.size == (196, 196), f"Wrong dimensions: {img.size}, expected (196, 196)"

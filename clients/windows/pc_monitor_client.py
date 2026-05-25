@@ -18,31 +18,38 @@ except ImportError:
 def get_cpu_temp_wmi():
     """
     Attempts to read CPU temperature via WMI on Windows.
-    Requires administrator privileges or a monitoring agent running.
+    Queries both OpenHardwareMonitor and LibreHardwareMonitor namespaces
+    using PowerShell to avoid external python-wmi/pywin32 dependencies.
     """
     if sys.platform != "win32":
         return None
+
+    # 1. Try standard ACPI Thermal Zone first via PowerShell
     try:
-        # 1. Try standard MSAcpi_ThermalZoneTemperature (requires admin)
-        import wmi
-        w = wmi.WMI(namespace="root\\wmi")
-        temps = w.MSAcpi_ThermalZoneTemperature()
-        if temps:
-            # Convert Tenths of Kelvin to Celsius
-            return round((temps[0].CurrentTemperature / 10.0) - 273.15, 1)
+        cmd = 'Get-CimInstance -Namespace root\\wmi -ClassName MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature'
+        result = subprocess.run(["powershell", "-Command", cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            raw_temp = float(result.stdout.strip())
+            return round((raw_temp / 10.0) - 273.15, 1)
     except Exception:
         pass
 
-    try:
-        # 2. Try OpenHardwareMonitor / LibreHardwareMonitor WMI namespace fallback
-        import wmi
-        w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
-        sensors = w.Sensor(SensorType="Temperature")
-        cpu_temps = [s.Value for s in sensors if "cpu" in s.Name.lower()]
-        if cpu_temps:
-            return round(sum(cpu_temps) / len(cpu_temps), 1)
-    except Exception:
-        pass
+    # 2. Try LibreHardwareMonitor or OpenHardwareMonitor WMI namespace via PowerShell
+    # Checks both namespaces: root\\LibreHardwareMonitor and root\\OpenHardwareMonitor
+    namespaces = ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"]
+    for ns in namespaces:
+        try:
+            # Query WMI Sensor for Temperature of CPU
+            cmd = f'Get-CimInstance -Namespace "{ns}" -ClassName Sensor | Where-Object {{ $_.SensorType -eq "Temperature" -and ($_.Name -like "*CPU Core*" -or $_.Name -like "*CPU Package*") }} | Select-Object -ExpandProperty Value'
+            result = subprocess.run(["powershell", "-Command", cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                lines = result.stdout.strip().split("\n")
+                temps = [float(t.strip()) for t in lines if t.strip()]
+                if temps:
+                    # Return the average CPU core temperature
+                    return round(sum(temps) / len(temps), 1)
+        except Exception:
+            pass
 
     return None
 

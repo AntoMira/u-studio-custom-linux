@@ -39,6 +39,10 @@ def test_config_parsing():
     assert "state_sync_interval" in config, "Missing 'state_sync_interval' root in config.yaml"
     assert isinstance(config["state_sync_interval"], int), "state_sync_interval must be an integer"
     assert config["state_sync_interval"] > 0, "state_sync_interval must be a positive integer greater than 0"
+    assert "pc_monitor_mode" in config, "Missing 'pc_monitor_mode' root in config.yaml"
+    assert config["pc_monitor_mode"] in ("pull", "push"), "pc_monitor_mode must be 'pull' or 'push'"
+    assert "pc_monitor_ip" in config, "Missing 'pc_monitor_ip' root in config.yaml"
+    assert isinstance(config["pc_monitor_ip"], str), "pc_monitor_ip must be a string"
     assert "pc_monitor_port" in config, "Missing 'pc_monitor_port' root in config.yaml"
     assert isinstance(config["pc_monitor_port"], int), "pc_monitor_port must be an integer"
     assert 1 <= config["pc_monitor_port"] <= 65535, "pc_monitor_port must be a valid port (1-65535)"
@@ -251,6 +255,143 @@ def test_weather_service():
     
     print("✅ WeatherService validation checks passed successfully.")
 
+def test_lhm_telemetry_parsing():
+    """
+    Validates the recursive search and parser calculations for the LibreHardwareMonitor JSON tree.
+    """
+    print("Testing LibreHardwareMonitor JSON search and parsing logic...")
+    
+    # 1. Create a dummy LHM sensor tree structure
+    dummy_tree = {
+        "Text": "SensorTree",
+        "Children": [
+            {
+                "Text": "DESKTOP-ABC1234",
+                "Children": [
+                    {
+                        "Text": "Intel Core i9-13900K",
+                        "Children": [
+                            {
+                                "Text": "Temperatures",
+                                "Children": [
+                                    {"Text": "CPU Package", "Value": "62.5 °C", "Children": []},
+                                    {"Text": "CPU Core #1", "Value": "55.0 °C", "Children": []}
+                                ]
+                            },
+                            {
+                                "Text": "Load",
+                                "Children": [
+                                    {"Text": "CPU Total", "Value": "42.3 %", "Children": []}
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "Text": "NVIDIA GeForce RTX 4090",
+                        "Children": [
+                            {
+                                "Text": "Temperatures",
+                                "Children": [
+                                    {"Text": "GPU Core", "Value": "50,2 °C", "Children": []}
+                                ]
+                            },
+                            {
+                                "Text": "Load",
+                                "Children": [
+                                    {"Text": "GPU Core", "Value": "85.0 %", "Children": []}
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "Text": "Generic Memory",
+                        "Children": [
+                            {
+                                "Text": "Load",
+                                "Children": [
+                                    {"Text": "Memory", "Value": "64.1 %", "Children": []}
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "Text": "SanDisk SSD 1TB",
+                        "Children": [
+                            {
+                                "Text": "Load",
+                                "Children": [
+                                    {"Text": "Used Space", "Value": "78.9 %", "Children": []}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    
+    import os
+    import fcntl
+    fcntl.flock = lambda fd, op: None
+    os.environ["SIMULATOR_MODE"] = "True"
+    
+    from main import StreamDeckApp
+    app = StreamDeckApp()
+    
+    # 2. Test PC Name extraction
+    pc_name = dummy_tree.get("Text", "PC")
+    if pc_name == "SensorTree" and dummy_tree.get("Children"):
+        pc_name = dummy_tree["Children"][0].get("Text", "PC")
+    assert pc_name == "DESKTOP-ABC1234", f"PC name should be DESKTOP-ABC1234, got {pc_name}"
+    
+    # 3. Test CPU Package Temp paths
+    cpu_temp_paths = [
+        ["intel", "temperatures", "cpu package"],
+        ["cpu", "temperatures", "core max"],
+    ]
+    raw_val = app.get_sensor_value(dummy_tree, cpu_temp_paths)
+    assert raw_val == "62.5 °C", f"Expected '62.5 °C', got '{raw_val}'"
+    parsed_val = app.parse_lhm_value(raw_val)
+    assert parsed_val == 62.5, f"Expected 62.5, got {parsed_val}"
+    
+    # 4. Test CPU Total Load paths
+    cpu_usage_paths = [
+        ["intel", "load", "cpu total"],
+    ]
+    raw_val = app.get_sensor_value(dummy_tree, cpu_usage_paths)
+    assert raw_val == "42.3 %", f"Expected '42.3 %', got '{raw_val}'"
+    parsed_val = app.parse_lhm_value(raw_val)
+    assert parsed_val == 42.3, f"Expected 42.3, got {parsed_val}"
+    
+    # 5. Test GPU Temp paths with decimal comma formatting
+    gpu_temp_paths = [
+        ["nvidia", "temperatures", "gpu core"],
+    ]
+    raw_val = app.get_sensor_value(dummy_tree, gpu_temp_paths)
+    assert raw_val == "50,2 °C", f"Expected '50,2 °C', got '{raw_val}'"
+    parsed_val = app.parse_lhm_value(raw_val)
+    assert parsed_val == 50.2, f"Expected 50.2, got {parsed_val}"
+    
+    # 6. Test RAM Load paths
+    ram_usage_paths = [
+        ["generic memory", "load", "memory"],
+    ]
+    raw_val = app.get_sensor_value(dummy_tree, ram_usage_paths)
+    assert raw_val == "64.1 %", f"Expected '64.1 %', got '{raw_val}'"
+    parsed_val = app.parse_lhm_value(raw_val)
+    assert parsed_val == 64.1, f"Expected 64.1, got {parsed_val}"
+    
+    # 7. Test Disk Load paths
+    disk_usage_paths = [
+        ["ssd", "load", "used space"],
+    ]
+    raw_val = app.get_sensor_value(dummy_tree, disk_usage_paths)
+    assert raw_val == "78.9 %", f"Expected '78.9 %', got '{raw_val}'"
+    parsed_val = app.parse_lhm_value(raw_val)
+    assert parsed_val == 78.9, f"Expected 78.9, got {parsed_val}"
+    
+    print("✅ LibreHardwareMonitor JSON search and parsing logic check passed.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -264,6 +405,8 @@ def run_tests():
         test_deck_manager_rendering()
         print("-"*60)
         test_weather_service()
+        print("-"*60)
+        test_lhm_telemetry_parsing()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

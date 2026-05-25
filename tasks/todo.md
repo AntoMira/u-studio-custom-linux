@@ -158,26 +158,24 @@
     - [x] Create `server/verify_timezone.py` testing suite to validate timezone parsing, adjustments, and system fallbacks
     - [x] Run entire verification suite (`verify.py`, `verify_sleep.py`, `verify_timezone.py`) to prove correct functionality
 
+- [x] **30. LibreHardwareMonitor HTTP Pull Telemetry Integration**
+    - [x] Create detailed implementation plan and obtain approval
+    - [x] Update `config.yaml` with LHM Pull settings (`pc_monitor_mode`, `pc_monitor_ip`, `pc_monitor_port`)
+    - [x] Add LHM WMI JSON recursive parsing function in `server/main.py`
+    - [x] Implement `run_pc_monitor_pull_daemon` thread in `server/main.py` (fetching `data.json` over HTTP GET)
+    - [x] Remove old UDP listener sockets and threads from `server/main.py`
+    - [x] Update testing suite inside `server/verify.py` to assert LHM config options and mock parsing calculations
+    - [x] Run entire verification test suite (`verify.py`, `verify_sleep.py`, `verify_timezone.py`) to confirm zero regressions
+
 ## Results & Review
 
 ### Implementation Summary
 *   **Modular Architecture:** Successfully created a robust, decoupled integration for Ulanzi D200 Stream Deck controllers and Philips Hue REST APIs.
 *   **Simulator Mode:** Fully operational Simulator Mode featuring a console CLI and real-time button renders saved as PNG files (196x196 pixels RGB).
-*   **Clock Daemon:** Real-time clock widget background thread completed and verified.
-*   **Version Control:** Initialized Git repository, renamed default branch to `main`, successfully created a new private repository on GitHub (`AntoMira/streamdeck`) using `gh` CLI, and pushed all commits with remote tracking fully functional.
-*   **Venv Runner Script (`run.sh`):** Created and verified a self-contained runner script that automatically bootstraps the virtual environment, installs dependencies, and cleanly boots up the interactive Stream Deck simulator environment.
-*   **Python 3.9 & Physical Hardware Connection:** Upgraded system environment to Python 3.9, resolved undeclared `deepdiff` dependencies in PyPI, successfully established physical communication with the Ulanzi D200 Stream Deck via `hidapi` packets, and removed import fallbacks to enforce physical mode hardware constraints.
-*   **Small Screen Clock Sync:** Integrated a background asyncio-scheduled keep-alive loop that automatically updates the D200's small information status screen with a high-precision, timezone-configurable real-time clock, successfully matching local time outputs.
-*   **Global Font Size Customization:** Implemented root-level properties (`font_size_label` and `font_size_status`) in `config.yaml` to dynamically customize Pillow-rendered text sizes on the physical D200 buttons.
-*   **Config Documentation:** Added extensive inline comments documenting every single global setting and button configuration attribute with expected formats and valid ranges.
-*   **Widget UI Border Polish:** Modified `deck_manager.py` to selectively disable outer borders (outlines) for borders on buttons set to `device_type: "widget"`, successfully removing the blue margin around the clock widget while preserving the light blue text and clock dial highlights.
-*   **Philips Hue Device Listing Tool:** Created `list_hue.py` CLI utility and a shell wrapper script `list_hue.sh` allowing quick physical/simulator connection checks and device ID listings.
-*   **Periodic State Synchronization Daemon:** Implemented a background thread `run_state_sync_daemon` in `main.py` that polls the Hue Bridge every 5 seconds via `list_devices()` and automatically refreshes all button states if any external changes are detected, reducing HTTP overhead to a single GET call per tick.
-*   **Configurable Background Polling:** Added root-level configuration option `state_sync_interval` to `config.yaml` to dynamically customize the sleep duration of the device state sync daemon thread, fully integrated in `main.py` and validated via automated unit testing.
-*   **Firmware Cache Invalidation:** Implemented a timestamp-salted cache-busting filename mechanism for button icons inside `deck_manager.py` to bypass Ulanzi D200 hardware-level image caching, combined with automatic local cleanup of older icon assets.
-*   **Dynamic Status Colors (Green/Red/Gray):** Refactored `update_button()` in `deck_manager.py` to accept a `reachable` parameter and render dynamic, premium visual themes: active state (ON) renders status text in **green**, inactive state (OFF) renders status and borders in **red**, and unreachable/disconnected state (OFFLINE) renders text and borders in **gray**.
-*   **Visual Style Refactoring (White Text/Icons, Solid Backgrounds):** Updated `update_button()` in `deck_manager.py` to render all labels, statuses, and icons/drawings in white (`255, 255, 255`) and replaced outer glow borders with solid background fills representing current device states: solid dark green for active (ON), solid dark red for inactive (OFF), and solid black for disconnected devices, clock widgets, and all other buttons.
-*   **Screen Auto Sleep & Wake:** Added configuration settings (`screen_sleep_start`, `screen_sleep_end`, and `screen_sleep_timeout`) in `config.yaml` to specify a time-scheduled sleep window and inactivity timeout in seconds. Refactored `deck_manager.py` to support hardware backlight-off commands (setting brightness to `0`), intercept keypress events when asleep to wake the screen (restoring brightness to `80`), reset inactivity timers, and consume the first wake keypress to prevent accidental toggles in the dark. Fully validated via automated unit testing suite (`verify_sleep.py`).
+*   **Clock Widget & Timezone support:** Background Clock Widget Daemon using real-time timezone configuration with elegant fallback options.
+*   **Weather Widgets ("weather" & "weather+1"):** High-contrast weather rendering supporting auto cache invalidate and tap force refresh.
+*   **Screen Auto Sleep & Wake:** Automatically shuts down buttons LCD screens on customizable schedule and inactivity timeout, seamlessly waking up on physical tap and consuming the initial keypress.
+*   **LibreHardwareMonitor HTTP Pull Telemetry:** Transitioned Windows resource monitor widgets to an HTTP Pull architecture. The Linux daemon queries LHM's integrated web API (`/data.json`) every 5 seconds, using a recursive path-based parser with robust vendor keywords (Intel, AMD, NVIDIA, Ryzen, Radeon, SSD, RAM) to map metrics flawlessly without Windows-side scripting dependencies, incorporating automatic offline detection.
 
 ### Test Results (`verify.py`)
 ```text
@@ -188,18 +186,33 @@ Testing config.yaml safety and parsing...
 ✅ config.yaml safety validation passed successfully.
 ------------------------------------------------------------
 Testing HueController simulation and toggles...
-2026-05-25 01:34:37,555 [INFO] HueController: Initialized in SIMULATOR MODE. No network requests will be made.
-2026-05-25 01:34:37,555 [INFO] HueController: Toggling Device 1 -> OFF
-2026-05-25 01:34:37,555 [INFO] HueController (SIM): Updated Light 1 state -> {'on': False}
-2026-05-25 01:34:37,555 [INFO] HueController: Toggling Device 3 -> ON
-2026-05-25 01:34:37,555 [INFO] HueController (SIM): Updated Light 3 state -> {'on': True}
+2026-05-25 23:23:25,872 [INFO] HueController: Initialized in SIMULATOR MODE. No network requests will be made.
+2026-05-25 23:23:25,872 [INFO] HueController: Toggling Device 1 -> OFF
+2026-05-25 23:23:25,872 [INFO] HueController (SIM): Updated Light 1 state -> {'on': False}
+2026-05-25 23:23:25,872 [INFO] HueController: Toggling Device 3 -> ON
+2026-05-25 23:23:25,872 [INFO] HueController (SIM): Updated Light 3 state -> {'on': True}
 ✅ HueController simulation checks passed successfully.
 ------------------------------------------------------------
 Testing DeckManager image rendering output...
-2026-05-25 01:34:37,555 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
-2026-05-25 01:34:37,565 [INFO] DeckManager (SIM): Saved button 9 screen to -> /home/zee/code/streamdeck/output_sim/button_9.png
-2026-05-25 01:34:37,567 [INFO] DeckManager (SIM): Saved button 8 screen to -> /home/zee/code/streamdeck/output_sim/button_8.png
+2026-05-25 23:23:25,872 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
+2026-05-25 23:23:25,882 [INFO] DeckManager (SIM): Saved button 9 screen to -> /home/zee/code/streamdeck/server/output_sim/button_9.png
+2026-05-25 23:23:25,884 [INFO] DeckManager (SIM): Saved button 8 screen to -> /home/zee/code/streamdeck/server/output_sim/button_8.png
+2026-05-25 23:23:25,887 [INFO] DeckManager (SIM): Saved button 7 screen to -> /home/zee/code/streamdeck/server/output_sim/button_7.png
+2026-05-25 23:23:25,890 [INFO] DeckManager (SIM): Saved button 6 screen to -> /home/zee/code/streamdeck/server/output_sim/button_6.png
+2026-05-25 23:23:25,892 [INFO] DeckManager (SIM): Saved button 5 screen to -> /home/zee/code/streamdeck/server/output_sim/button_5.png
 ✅ DeckManager image rendering output checked successfully.
+------------------------------------------------------------
+Testing WeatherService logic and aggregation...
+2026-05-25 23:23:25,912 [INFO] WeatherService: Operating in MOCK mode (No valid API key). Returning premium mock forecast.
+✅ WeatherService validation checks passed successfully.
+------------------------------------------------------------
+Testing LibreHardwareMonitor JSON search and parsing logic...
+2026-05-25 23:23:25,921 [INFO] StreamDeckApp: Configured timezone: America/Sao_Paulo
+2026-05-25 23:23:25,921 [INFO] StreamDeckApp: Loading configuration files...
+2026-05-25 23:23:25,929 [INFO] StreamDeckApp: Successfully loaded 7 button mappings.
+2026-05-25 23:23:25,929 [INFO] HueController: Initialized in SIMULATOR MODE. No network requests will be made.
+2026-05-25 23:23:25,929 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
+✅ LibreHardwareMonitor JSON search and parsing logic check passed.
 ============================================================
 🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!
 ============================================================

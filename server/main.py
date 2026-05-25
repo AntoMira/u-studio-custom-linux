@@ -4,6 +4,7 @@ import time
 import logging
 import threading
 import fcntl
+import requests
 from datetime import datetime
 import yaml
 from dotenv import load_dotenv
@@ -73,6 +74,8 @@ class StreamDeckApp:
         self.screen_sleep_end = "07:00"
         self.screen_sleep_timeout = 300
         self.last_activity_time = time.time()
+        self.pc_monitor_mode = "push"
+        self.pc_monitor_ip = ""
         self.pc_monitor_port = 9999
         self.pc_stats = {}
         self.pc_stats_last_update = 0
@@ -129,7 +132,9 @@ class StreamDeckApp:
             self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")
             self.screen_sleep_end = config_data.get("screen_sleep_end", "07:00")
             self.screen_sleep_timeout = int(config_data.get("screen_sleep_timeout", 300))
-            self.pc_monitor_port = int(config_data.get("pc_monitor_port", 9999))
+            self.pc_monitor_mode = config_data.get("pc_monitor_mode", "push")
+            self.pc_monitor_ip = config_data.get("pc_monitor_ip", "")
+            self.pc_monitor_port = int(config_data.get("pc_monitor_port", 9999 if self.pc_monitor_mode == "push" else 8085))
             
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
@@ -408,10 +413,15 @@ class StreamDeckApp:
             clock_thread = threading.Thread(target=self.run_clock_daemon, daemon=True)
             clock_thread.start()
 
-        # Start the UDP Listener and PC Monitor carousel thread if pc_monitor buttons exist
+        # Start the PC Monitor background telemetries and carousel thread if pc_monitor buttons exist
         if self.pc_monitor_buttons:
-            udp_thread = threading.Thread(target=self.run_udp_listener, daemon=True)
-            udp_thread.start()
+            if self.pc_monitor_mode == "pull":
+                pull_thread = threading.Thread(target=self.run_pc_monitor_pull_daemon, daemon=True)
+                pull_thread.start()
+            else:
+                if hasattr(self, "run_udp_listener"):
+                    udp_thread = threading.Thread(target=self.run_udp_listener, daemon=True)
+                    udp_thread.start()
             pc_monitor_thread = threading.Thread(target=self.run_pc_monitor_daemon, daemon=True)
             pc_monitor_thread.start()
 
@@ -435,35 +445,156 @@ class StreamDeckApp:
             self.deck_mgr.close()
             logging.info("StreamDeckApp: Application terminated safely.")
 
-    def run_udp_listener(self):
+    def find_sensor_by_path(self, node, path_keywords, depth=0):
         """
-        Background UDP broadcast listener thread. Receives PC performance metrics.
+        Recursively searches the sensor node based on hierarchical keywords.
+        e.g., path_keywords=["intel core", "temperatures", "cpu package"]
         """
-        import socket
-        import json
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.bind(("", self.pc_monitor_port))
-            sock.settimeout(2.0)
-            logging.info(f"StreamDeckApp: Bound UDP Performance Listener on port {self.pc_monitor_port}")
-        except Exception as e:
-            logging.error(f"StreamDeckApp: Failed to bind UDP listener on port {self.pc_monitor_port}: {e}")
-            return
+        if not node:
+            return None
+        text = node.get("Text", "").lower()
+        keyword = path_keywords[depth].lower()
+        
+        if keyword in text:
+            if depth == len(path_keywords) - 1:
+                return node.get("Value")
+            
+            for child in node.get("Children", []):
+                val = self.find_sensor_by_path(child, path_keywords, depth + 1)
+                if val is not None:
+                    return val
+                    
+        for child in node.get("Children", []):
+            val = self.find_sensor_by_path(child, path_keywords, depth)
+            if val is not None:
+                return val
+        return None
 
+    def get_sensor_value(self, tree, paths):
+        for path in paths:
+            val = self.find_sensor_by_path(tree, path)
+            if val is not None:
+                return val
+        return None
+
+    def parse_lhm_value(self, val_str):
+        if val_str is None:
+            return None
+        try:
+            # Strip standard units and spaces
+            cleaned = val_str.replace("°C", "").replace("%", "").replace("GB", "").strip()
+            cleaned = cleaned.replace(",", ".")
+            return float(cleaned)
+        except Exception as e:
+            logging.debug(f"StreamDeckApp: Failed to parse sensor value '{val_str}': {e}")
+            return None
+
+    def run_pc_monitor_pull_daemon(self):
+        """
+        Daemon thread task fetching data.json from LibreHardwareMonitor web server.
+        """
+        logging.info("StreamDeckApp: Background PC Monitor HTTP Pull Daemon started.")
         while self.running:
+            if not self.pc_monitor_ip:
+                logging.warning("StreamDeckApp: PC Monitor mode is 'pull' but pc_monitor_ip is empty.")
+                time.sleep(5)
+                continue
+                
+            url = f"http://{self.pc_monitor_ip}:{self.pc_monitor_port}/data.json"
             try:
-                data, addr = sock.recvfrom(2048)
-                payload = json.loads(data.decode("utf-8"))
-                if isinstance(payload, dict) and "pc_name" in payload:
-                    self.pc_stats = payload
+                # 2-second timeout as specified in the plan
+                response = requests.get(url, timeout=2.0)
+                if response.status_code == 200:
+                    tree = response.json()
+                    
+                    # 1. Parse PC Name from root or first child
+                    pc_name = tree.get("Text", "PC")
+                    if pc_name == "SensorTree" and tree.get("Children"):
+                        pc_name = tree["Children"][0].get("Text", "PC")
+                    
+                    # 2. Extract metrics using robust lists of candidate paths
+                    cpu_temp_paths = [
+                        ["intel", "temperatures", "cpu package"],
+                        ["amd", "temperatures", "cpu package"],
+                        ["core", "temperatures", "cpu package"],
+                        ["ryzen", "temperatures", "cpu package"],
+                        ["cpu", "temperatures", "cpu package"],
+                        ["intel", "temperatures", "core max"],
+                        ["amd", "temperatures", "core max"],
+                        ["core", "temperatures", "core max"],
+                        ["cpu", "temperatures", "core max"],
+                        ["intel", "temperatures", "cpu total"],
+                        ["amd", "temperatures", "cpu total"],
+                        ["cpu", "temperatures", "cpu total"],
+                        ["cpu", "temperatures", "core (tctl/tdie)"],
+                        ["cpu", "temperatures", "core temperature"],
+                    ]
+                    cpu_usage_paths = [
+                        ["intel", "load", "cpu total"],
+                        ["amd", "load", "cpu total"],
+                        ["core", "load", "cpu total"],
+                        ["ryzen", "load", "cpu total"],
+                        ["cpu", "load", "cpu total"],
+                        ["intel", "load", "total"],
+                        ["amd", "load", "total"],
+                        ["cpu", "load", "total"],
+                        ["cpu", "load", "cpu"],
+                    ]
+                    gpu_temp_paths = [
+                        ["nvidia", "temperatures", "gpu core"],
+                        ["geforce", "temperatures", "gpu core"],
+                        ["radeon", "temperatures", "gpu core"],
+                        ["gpu", "temperatures", "gpu core"],
+                        ["nvidia", "temperatures", "gpu temperature"],
+                        ["radeon", "temperatures", "gpu temperature"],
+                        ["gpu", "temperatures", "gpu temperature"],
+                    ]
+                    gpu_usage_paths = [
+                        ["nvidia", "load", "gpu core"],
+                        ["geforce", "load", "gpu core"],
+                        ["radeon", "load", "gpu core"],
+                        ["gpu", "load", "gpu core"],
+                        ["nvidia", "load", "gpu memory"],
+                        ["gpu", "load", "gpu memory"],
+                        ["gpu", "load", "gpu"],
+                    ]
+                    ram_usage_paths = [
+                        ["generic memory", "load", "memory"],
+                        ["memory", "load", "memory"],
+                        ["memory", "load", "memory load"],
+                    ]
+                    disk_usage_paths = [
+                        ["hdd", "load", "used space"],
+                        ["ssd", "load", "used space"],
+                        ["drive", "load", "used space"],
+                        ["storage", "load", "used space"],
+                        ["disk", "load", "used space"],
+                    ]
+                    
+                    cpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, cpu_temp_paths))
+                    cpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, cpu_usage_paths)) or 0.0
+                    gpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, gpu_temp_paths))
+                    gpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, gpu_usage_paths)) or 0.0
+                    ram_usage = self.parse_lhm_value(self.get_sensor_value(tree, ram_usage_paths)) or 0.0
+                    disk_usage = self.parse_lhm_value(self.get_sensor_value(tree, disk_usage_paths)) or 0.0
+                    
+                    self.pc_stats = {
+                        "pc_name": pc_name,
+                        "cpu_usage": cpu_usage,
+                        "cpu_temp": cpu_temp,
+                        "gpu_usage": gpu_usage,
+                        "gpu_temp": gpu_temp,
+                        "ram_usage": ram_usage,
+                        "disk_usage": disk_usage,
+                    }
                     self.pc_stats_last_update = time.time()
-            except socket.timeout:
-                continue
+                else:
+                    logging.warning(f"StreamDeckApp: LHM server returned status code {response.status_code}")
             except Exception as e:
-                logging.debug(f"StreamDeckApp: UDP parse error: {e}")
-                continue
-        sock.close()
+                # Capture connection timeouts and errors gracefully to trigger offline display
+                logging.debug(f"StreamDeckApp: Failed to fetch LHM metrics: {e}")
+                
+            time.sleep(5)
 
     def run_pc_monitor_daemon(self):
         """

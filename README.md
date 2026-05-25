@@ -3,24 +3,35 @@
 This project is a highly customizable, local Python-based controller for the **Ulanzi D200 Stream Controller**, integrating directly with your local **Philips Hue REST API**. It allows the physical tactile LCD keys of the D200 to:
 1.  Toggle Philips Hue lights and smart plugs.
 2.  Adjust light brightness.
-3.  Display real-time states ("ON", "OFF", brightness %) dynamically drawn over custom PNG icons.
-4.  Render a background digital clock widget ("HH:MM") updating in real time.
+3.  Display real-time states ("ON", "OFF", brightness %) dynamically drawn over custom PNG icons with solid color status backgrounds.
+4.  Render a background digital clock widget ("HH:MM") updating in real time based on customizable timezone configuration.
+5.  Render real-time geometric Weather widgets (for Today and Tomorrow) with caching and tap-to-force-refresh.
+6.  Display Windows PC telemetry statistics (CPU, GPU, RAM, and Disk) with smooth 5-second slide carousel rotations.
 
-For developers and off-grid testing, the application includes a robust **Simulator Mode** that allows you to emulates button clicks from your console and writes visual screens directly to a local directory for preview.
+For developers and off-grid testing, the application includes a robust **Simulator Mode** that allows you to emulate button clicks from your console and writes visual screens directly to a local directory for preview.
 
 ---
 
-## 🛠️ Setup Instructions
+## 📂 Repository Structure
+
+The project is split into specialized subdirectories to keep server logic cleanly decoupled from clients:
+*   `server/`: Contains all server-side python services, configurations, verification test suites, and virtual environments running on the Linux host.
+*   `clients/windows/`: Contains Windows-side telemetry scripts (kept for historical client-push compatibility).
+*   `tasks/`: Checklists, lessons learned, and design artifacts.
+
+---
+
+## 🛠️ Setup Instructions (Linux Server)
 
 ### 1. Environment and Packages
-This project is built using Python 3.9+. Follow these steps to configure your local virtual environment:
+This project is built using Python 3.9+. Navigate to the `server/` subdirectory to configure your local virtual environment:
 
 ```bash
-# Navigate to the workspace
-cd /home/zee/code/streamdeck
+# Navigate to the server folder
+cd /home/zee/code/streamdeck/server
 
 # Initialize virtual environment
-python3 -m venv venv
+python3.9 -m venv venv
 
 # Activate virtual environment
 source venv/bin/activate
@@ -48,33 +59,24 @@ To control your lights, you need to configure the local network bridge connectio
 ---
 
 ### 3. Environment Secrets (.env)
-Create a `.env` file in the root of the project by copying the example:
+Create a `.env` file inside the `server/` directory by copying the example:
 
 ```bash
+cd /home/zee/code/streamdeck/server
 cp .env.example .env
 ```
 
-Edit the `.env` file and input your settings:
+Edit the `server/.env` file and input your settings:
 ```env
 HUE_BRIDGE_IP=192.168.1.100
 HUE_USERNAME=your_generated_api_username
 SIMULATOR_MODE=True  # Set to False to communicate with physical D200 hardware
+TIMEZONE=America/Sao_Paulo  # Configure your preferred local timezone
 ```
 
 ---
 
-### 4. Customizing Mappings (config.yaml)
-Edit `config.yaml` to map keys to your home automation devices:
-*   `index`: Key index (from 0 to 12).
-*   `device_type`: `light` (dimmable bulb), `plug` (on/off plug), or `widget` (time widget).
-*   `action_type`: `hue_toggle` or `clock`.
-*   `target`: Your Philips Hue light/plug ID (numeric string).
-*   `label`: Friendly name displayed on top of the button.
-*   `icon`: Relative path to a PNG icon inside your project. (If missing, the script falls back to drawing beautiful minimal geometric vector shapes).
-
----
-
-### 5. USB Permissions on Linux (udev Rules)
+### 4. USB Permissions on Linux (udev Rules)
 To run this application as a non-root user (without `sudo`), you must grant your user permissions to access the D200 USB device.
 
 1.  Plug in your D200 via USB.
@@ -100,23 +102,77 @@ To run this application as a non-root user (without `sudo`), you must grant your
 
 ---
 
+## 🖥️ PC Performance Monitoring Telemetry (HTTP Pull via LibreHardwareMonitor)
+
+The Stream Deck features a premium performance monitoring widget that displays real-time statistics of your Windows PC (CPU load & temp, GPU load & temp, RAM usage, and Disk storage load) directly on button index 9, rotating through a carousel every 5 seconds.
+
+Instead of running heavy Python or binary clients on Windows, this project uses a high-performance **HTTP Pull** architecture. The Linux daemon periodically polls the integrated JSON API of **LibreHardwareMonitor** running on your Windows PC.
+
+### 1. Windows PC Configuration
+
+To enable telemetry polling from the Linux host:
+
+1. **Activate the LHM Web Server:**
+   * Open **LibreHardwareMonitor** on your Windows PC.
+   * Go to **Options** $\rightarrow$ **Web Server** $\rightarrow$ click **Run**.
+   * *(Optional)* Go to **Options** $\rightarrow$ **Web Server** $\rightarrow$ **Port** to verify the port is set to `8085` (or modify `pc_monitor_port` in `config.yaml` to match).
+
+2. **Open the Windows Firewall Port:**
+   * Open **PowerShell** as **Administrator** on Windows and run this command to allow the Linux Stream Deck to reach the LHM JSON API:
+     ```powershell
+     New-NetFirewallRule -DisplayName "LibreHardwareMonitor WebServer" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8085
+     ```
+
+### 2. Stream Deck Configuration (`server/config.yaml`)
+
+Update the global settings in `server/config.yaml` to configure LHM Pull mode:
+
+```yaml
+pc_monitor_mode: "pull"          # Set to "pull" to use LibreHardwareMonitor API
+pc_monitor_ip: "192.168.31.101" # Set to the local network IP address of your Windows PC
+pc_monitor_port: 8085            # The web server port (default: 8085)
+```
+
+### 3. How the WMI Path Parser Works
+The Linux Stream Deck server contains a highly robust, recursive path-based WMI tree parser (`find_sensor_by_path`). Because hardware component names vary across systems (e.g., `"Intel Core i9-13900K"`, `"AMD Ryzen 9 7950X"`, `"NVIDIA GeForce RTX 4090"`), the parser scans the telemetry payload using extensive vendor keyword fallbacks:
+*   **CPU statistics:** Scans for keywords like `intel`, `amd`, `core`, `ryzen`, `cpu`, or `processor` on the first hierarchical level to resolve `cpu package` temperature and `cpu total` load across any architecture.
+*   **GPU statistics:** Resolves core temperatures and load percentages for NVIDIA Geforce/RTX (keywords `nvidia`, `geforce`, `rtx`) and AMD Radeon (keywords `radeon`).
+*   **RAM & Storage:** Traverses generic memory loads and active SSD/HDD/Disk storage capacities.
+*   **Offline Fallback:** If the Windows PC is powered off or unreachable for more than 15 seconds, the Stream Deck button automatically falls back to a solid dark-red display labeled **OFFLINE**, keeping the daemon completely crash-free.
+
+---
+
 ## 🚀 Running the Application
 
-### Verification Suite
-Run the automated test suite to verify configuration formatting, Pillow image drawing, and mock API toggling:
+Always navigate to the `server/` directory before running command tools:
+
 ```bash
-python verify.py
+cd /home/zee/code/streamdeck/server
+```
+
+### Verification Suite
+Run the automated test suite to verify configuration formatting, Pillow image drawing, screen sleep schedules, clock timezones, and the recursive LHM WMI telemetry parser:
+```bash
+./venv/bin/python verify.py
 ```
 
 ### Main Application
-Run the Stream Deck application:
+Run the Stream Deck application runner (automatically bootstraps venv, requirements, and launches in physical or simulator mode):
 ```bash
-python main.py
+./run.sh
 ```
 
 #### Console Keyboard Interface (Simulator Mode)
 When `SIMULATOR_MODE=True` is enabled, the program launches an interactive console. 
 *   **Trigger Keypress:** Type any mapped button index (e.g., `0`, `1`, `2`) and press `Enter` to simulate physical button clicks!
-*   **Preview Renderings:** Check the `/home/zee/code/streamdeck/output_sim/` directory. You will see visual files like `button_0.png` updating dynamically to show exactly what would render on the physical LCD screens!
+*   **Preview Renderings:** Check the `server/output_sim/` directory. You will see visual files like `button_0.png` updating dynamically to show exactly what would render on the physical LCD screens!
 *   **Clock interaction:** Clicking the clock key temporarily renders the current Date (`DD/MM`) for 3 seconds before automatically reverting to time (`HH:MM`).
 *   **Quit:** Type `q`, `exit`, or press `Ctrl+C` to shut down gracefully.
+
+---
+
+## 🖥️ Systemd Daemon Service Management (Root Directory)
+
+You can manage the background runner daemon directly from the repository root:
+*   **Start & Enable Service:** Run `./start_service.sh` (installs and starts the systemd service to run on Linux boot).
+*   **Stop & Disable Service:** Run `./stop_service.sh` (stops and disables the background systemd service).

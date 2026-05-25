@@ -8,6 +8,37 @@ from PIL import Image, ImageDraw, ImageFont
 # Set up logging format
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+def get_color_for_temp(temp: float) -> tuple:
+    """
+    Computes an interpolated RGB color for a given temperature based on thresholds:
+    <= 0: White (255, 255, 255)
+    10: Cyan (0, 255, 255)
+    24: Blue (0, 0, 255)
+    30: Orange (255, 165, 0)
+    >= 50: Red (255, 0, 0)
+    """
+    points = [
+        (0.0, (255, 255, 255)),
+        (10.0, (0, 255, 255)),
+        (24.0, (0, 0, 255)),
+        (30.0, (255, 165, 0)),
+        (50.0, (255, 0, 0))
+    ]
+    if temp <= points[0][0]:
+        return points[0][1]
+    if temp >= points[-1][0]:
+        return points[-1][1]
+    for i in range(len(points) - 1):
+        t1, c1 = points[i]
+        t2, c2 = points[i+1]
+        if t1 <= temp <= t2:
+            factor = (temp - t1) / (t2 - t1)
+            r = int(round(c1[0] + (c2[0] - c1[0]) * factor))
+            g = int(round(c1[1] + (c2[1] - c1[1]) * factor))
+            b = int(round(c1[2] + (c2[2] - c1[2]) * factor))
+            return (r, g, b)
+    return (0, 0, 0)
+
 class DeckManager:
     """
     Manages communication with the Ulanzi D200 Stream Deck.
@@ -212,7 +243,7 @@ class DeckManager:
 
         self._trigger_callbacks(button_index)
 
-    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None):
+    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
         * index: Button index (0 to 12)
@@ -224,6 +255,8 @@ class DeckManager:
         * text_override: For widgets like clocks to display time directly (e.g., "15:20")
         * reachable: True if the device is connected and responding, False otherwise
         * weather_type: 'clear', 'clouds', 'rain', 'thunderstorm', 'snow', or 'mist'
+        * min_temp: Forecastead minimum temperature for gradient calculations
+        * max_temp: Forecastead maximum temperature for gradient calculations
         """
         # Validate button index
         if index < 0 or index > 12:
@@ -242,8 +275,13 @@ class DeckManager:
         if margin_status is None:
             margin_status = self.margin_status
 
-        # 1. Determine Background Color based on State, Reachability, and Device Type
-        if not reachable:
+        # 1. Determine Background Color or Gradient based on State, Reachability, and Device Type
+        is_gradient = False
+        if device_type == "widget" and min_temp is not None and max_temp is not None:
+            is_gradient = True
+            min_color = get_color_for_temp(min_temp)
+            max_color = get_color_for_temp(max_temp)
+        elif not reachable:
             bg_color = (0, 0, 0)          # Black for disconnected
         elif device_type == "widget":
             bg_color = (0, 0, 0)          # Black for clock/widgets
@@ -254,10 +292,34 @@ class DeckManager:
 
         fg_color = (255, 255, 255)        # Always white for text, icons, and drawings
 
-        # 2. Create a blank 196x196 image with the determined background color
+        # 2. Create a blank 196x196 image with the determined background color/gradient
         width, height = 196, 196
-        img = Image.new("RGB", (width, height), color=bg_color)
-        draw = ImageDraw.Draw(img)
+        if is_gradient:
+            img = Image.new("RGB", (width, height))
+            draw = ImageDraw.Draw(img)
+            # Render horizontal gradient from left to right
+            for x in range(width):
+                factor = x / (width - 1)
+                r = int(round(min_color[0] + (max_color[0] - min_color[0]) * factor))
+                g = int(round(min_color[1] + (max_color[1] - min_color[1]) * factor))
+                b = int(round(min_color[2] + (max_color[2] - min_color[2]) * factor))
+                draw.line([(x, 0), (x, height)], fill=(r, g, b))
+            
+            # To ensure high contrast & elegant design, draw a translucent dark card container in the center
+            try:
+                overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                overlay_draw.rounded_rectangle([12, 12, 184, 184], radius=16, fill=(0, 0, 0, 100))
+                img.paste(overlay, (0, 0), overlay)
+            except AttributeError:
+                # Fallback if rounded_rectangle is not supported in the PIL version
+                overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                overlay_draw.rectangle([12, 12, 184, 184], fill=(0, 0, 0, 100))
+                img.paste(overlay, (0, 0), overlay)
+        else:
+            img = Image.new("RGB", (width, height), color=bg_color)
+            draw = ImageDraw.Draw(img)
 
         # 3. Render base icon (or default geometric symbol)
         icon_drawn = False
@@ -421,9 +483,13 @@ class DeckManager:
         # Using PIL default font scaled dynamically
         font_label = ImageFont.load_default(size=font_size_label)
         
+        # Determine text stroke for high-contrast on gradients
+        stroke_w = 1 if is_gradient else 0
+        stroke_f = (0, 0, 0) if is_gradient else None
+
         # Draw label
         label_w = draw.textlength(label, font=font_label)
-        draw.text(((width - label_w) // 2, margin_label), label, fill=fg_color, font=font_label)
+        draw.text(((width - label_w) // 2, margin_label), label, fill=fg_color, font=font_label, stroke_width=stroke_w, stroke_fill=stroke_f)
 
         # 5. Render Status / Value Text (at the bottom)
         if not reachable:
@@ -441,7 +507,7 @@ class DeckManager:
         font_status = ImageFont.load_default(size=font_size_status)
         status_w = draw.textlength(status_text, font=font_status)
         # Calculate vertically centered bottom offset relative to text height to prevent cutoff
-        draw.text(((width - status_w) // 2, height - margin_status), status_text, fill=fg_color, font=font_status)
+        draw.text(((width - status_w) // 2, height - margin_status), status_text, fill=fg_color, font=font_status, stroke_width=stroke_w, stroke_fill=stroke_f)
 
         # 6. Save or push the rendering
         if self.simulator_mode:

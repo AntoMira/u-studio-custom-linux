@@ -137,6 +137,32 @@ def test_deck_manager_rendering():
         reachable=True
     )
     
+    # Render weather gradient test button (cold weather)
+    test_weather_cold_idx = 4
+    manager.update_button(
+        index=test_weather_cold_idx,
+        label="Cold Day",
+        device_type="widget",
+        is_on=True,
+        text_override="-3°/1°",
+        weather_type="snow",
+        min_temp=-3.0,
+        max_temp=1.0
+    )
+
+    # Render weather gradient test button (hot weather)
+    test_weather_hot_idx = 3
+    manager.update_button(
+        index=test_weather_hot_idx,
+        label="Hot Day",
+        device_type="widget",
+        is_on=True,
+        text_override="29°/35°",
+        weather_type="clear",
+        min_temp=29.0,
+        max_temp=35.0
+    )
+    
     # Verify image output characteristics (online)
     target_path = os.path.join(manager.output_sim_dir, f"button_{test_btn_idx}.png")
     assert os.path.exists(target_path), f"Simulated button image not saved to {target_path}"
@@ -157,7 +183,15 @@ def test_deck_manager_rendering():
     target_path_printer = os.path.join(manager.output_sim_dir, f"button_{test_printer_idx}.png")
     assert os.path.exists(target_path_printer), f"Simulated printer button image not saved to {target_path_printer}"
     
-    with Image.open(target_path) as img:
+    # Verify image output characteristics (cold weather gradient)
+    target_path_cold = os.path.join(manager.output_sim_dir, f"button_{test_weather_cold_idx}.png")
+    assert os.path.exists(target_path_cold), f"Simulated cold weather button image not saved to {target_path_cold}"
+
+    # Verify image output characteristics (hot weather gradient)
+    target_path_hot = os.path.join(manager.output_sim_dir, f"button_{test_weather_hot_idx}.png")
+    assert os.path.exists(target_path_hot), f"Simulated hot weather button image not saved to {target_path_hot}"
+
+    with Image.open(target_path_cold) as img:
         assert img.size == (196, 196), f"Wrong dimensions: {img.size}, expected (196, 196)"
         assert img.format == "PNG", f"Wrong format: {img.format}, expected PNG"
         assert img.mode == "RGB", f"Wrong mode: {img.mode}, expected RGB"

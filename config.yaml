@@ -50,7 +50,7 @@ margin_label: 10        # Top margin for the label (default: 10)
 margin_status: 60       # Bottom margin for the status text (default: 25)
 small_window_mode: 1    # Small screen mode: 0 for Stats, 1 for Clock, 2 for Background
 state_sync_interval: 5  # Polling interval in seconds to sync device states from bridge (default: 5)
-screen_sleep_start: "24:00"   # Start of screen sleep window (default: "22:00")
+screen_sleep_start: "23:59"   # Start of screen sleep window (default: "22:00")
 screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
 

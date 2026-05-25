@@ -173,7 +173,9 @@ class StreamDeckApp:
                     is_on=True,
                     icon_path=icon,
                     text_override=temp_str,
-                    weather_type=w_type
+                    weather_type=w_type,
+                    min_temp=min_temp,
+                    max_temp=max_temp
                 )
 
     def on_button_press(self, index: int):

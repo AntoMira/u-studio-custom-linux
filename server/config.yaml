@@ -119,6 +119,13 @@ buttons:
   - index: 2
     device_type: "plug"
     action_type: "hue_toggle"
+    target: "6"  # Replace with your actual Philips Hue Smart Plug ID
+    label: "Monitor"
+    icon: "plug"
+
+  - index: 3
+    device_type: "plug"
+    action_type: "hue_toggle"
     target: "7"  # Replace with your actual Philips Hue Smart Plug ID
     label: "Impressora 3D"
     icon: "3dprinter"

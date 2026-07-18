@@ -64,8 +64,9 @@ class WeatherService:
         if self.is_mock_mode():
             logging.info("WeatherService: Operating in MOCK mode (No valid API key). Returning premium mock forecast.")
             self._cache = {
-                "weather": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
-                "weather+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+                "weather": { "temp": 20.5, "pop": 0.35, "type": "clouds" },
+                "weather_forecast": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
+                "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
             }
             self._cache_time = now
             return self._cache
@@ -99,8 +100,9 @@ class WeatherService:
 
         logging.warning("WeatherService: Returning simulated mock forecast due to API failure.")
         return {
-            "weather": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
-            "weather+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+            "weather": { "temp": 20.5, "pop": 0.35, "type": "clouds" },
+            "weather_forecast": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
+            "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
         }
 
     def _parse_forecast_data(self, data: dict) -> dict:
@@ -136,17 +138,37 @@ class WeatherService:
 
         parsed = {}
         
-        # Parse today's weather
+        # Parse current weather (using the very first/nearest forecast entry)
+        first_item = data.get("list", [])[0] if data.get("list") else {}
+        current_temp = 18.0
+        current_pop = 0.0
+        current_type = "clear"
+        
+        if first_item:
+            current_temp = first_item.get("main", {}).get("temp", 18.0)
+            current_pop = first_item.get("pop", 0.0)
+            w_list = first_item.get("weather", [])
+            if w_list:
+                w_id = w_list[0].get("id", 800)
+                current_type, _ = self.get_weather_type_and_priority(w_id)
+                
+        parsed["weather"] = {
+            "temp": current_temp,
+            "pop": current_pop,
+            "type": current_type
+        }
+        
+        # Parse today's weather forecast
         if today_records:
-            parsed["weather"] = self._aggregate_day_records(today_records)
+            parsed["weather_forecast"] = self._aggregate_day_records(today_records)
         else:
-            parsed["weather"] = { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" }
+            parsed["weather_forecast"] = { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" }
 
-        # Parse tomorrow's weather
+        # Parse tomorrow's weather forecast
         if tomorrow_records:
-            parsed["weather+1"] = self._aggregate_day_records(tomorrow_records)
+            parsed["weather_forecast+1"] = self._aggregate_day_records(tomorrow_records)
         else:
-            parsed["weather+1"] = { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+            parsed["weather_forecast+1"] = { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
 
         return parsed
 

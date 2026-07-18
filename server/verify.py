@@ -249,9 +249,10 @@ def test_weather_service():
     
     # Test mock forecast retrieval
     data = service.get_weather_data()
-    assert "weather" in data and "weather+1" in data, "Weather data structure is missing today or tomorrow keys"
-    assert data["weather"]["type"] == "clear"
-    assert data["weather+1"]["type"] == "rain"
+    assert "weather" in data and "weather_forecast" in data and "weather_forecast+1" in data, "Weather data structure is missing keys"
+    assert data["weather"]["type"] == "clouds"
+    assert data["weather_forecast"]["type"] == "clear"
+    assert data["weather_forecast+1"]["type"] == "rain"
     
     print("✅ WeatherService validation checks passed successfully.")
 

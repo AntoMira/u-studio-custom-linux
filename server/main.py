@@ -188,7 +188,7 @@ class StreamDeckApp:
                 icon_path=icon,
                 text_override=now_str
             )
-        elif device_type == "widget" and config.get("action_type") in ("weather", "weather+1"):
+        elif device_type == "widget" and config.get("action_type") in ("weather_forecast", "weather_forecast+1"):
             action = config.get("action_type")
             weather_data = self.weather_service.get_weather_data()
             day_data = weather_data.get(action)
@@ -209,6 +209,29 @@ class StreamDeckApp:
                     weather_type=w_type,
                     min_temp=min_temp,
                     max_temp=max_temp
+                )
+        elif device_type == "widget" and config.get("action_type") == "weather":
+            # Current Weather Widget
+            weather_data = self.weather_service.get_weather_data()
+            current_data = weather_data.get("weather")
+            if current_data:
+                temp = current_data["temp"]
+                pop = current_data["pop"]
+                w_type = current_data["type"]
+                
+                # Format: "Temp° | POP%" (e.g. 21° | 40%)
+                pop_pct = int(round(pop * 100))
+                temp_str = f"{int(round(temp))}° | {pop_pct}%"
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon,
+                    text_override=temp_str,
+                    weather_type=w_type,
+                    min_temp=temp,
+                    max_temp=None
                 )
         elif device_type == "widget" and config.get("action_type") == "pc_monitor":
             self.deck_mgr.update_button(
@@ -255,7 +278,7 @@ class StreamDeckApp:
             )
             # Spawn a timer thread to revert back to clock time after 3 seconds
             threading.Timer(3.0, self.update_button_state, args=[index]).start()
-        elif action_type in ("weather", "weather+1"):
+        elif action_type in ("weather", "weather_forecast", "weather_forecast+1"):
             logging.info(f"StreamDeckApp: Weather button {index} pressed. Force-refreshing weather data...")
             # Temporarily show REFRESHING... feedback
             self.deck_mgr.update_button(
@@ -268,11 +291,11 @@ class StreamDeckApp:
             )
             self.weather_service.clear_cache()
             
-            # Spawn a background thread to re-fetch and paint both buttons
+            # Spawn a background thread to re-fetch and paint weather buttons
             def do_refresh():
                 self.weather_service.get_weather_data()
                 for w_idx, w_config in self.buttons_config.items():
-                    if w_config.get("device_type") == "widget" and w_config.get("action_type") in ("weather", "weather+1"):
+                    if w_config.get("device_type") == "widget" and w_config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1"):
                         self.update_button_state(w_idx)
                         
             threading.Thread(target=do_refresh, daemon=True).start()
@@ -347,7 +370,7 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
-                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather+1"):
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)

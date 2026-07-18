@@ -277,10 +277,14 @@ class DeckManager:
 
         # 1. Determine Background Color or Gradient based on State, Reachability, and Device Type
         is_gradient = False
+        is_weather_solid = False
         if device_type == "widget" and min_temp is not None and max_temp is not None:
             is_gradient = True
             min_color = get_color_for_temp(min_temp)
             max_color = get_color_for_temp(max_temp)
+        elif device_type == "widget" and min_temp is not None:
+            is_weather_solid = True
+            bg_color = get_color_for_temp(min_temp)
         elif not reachable:
             bg_color = (0, 0, 0)          # Black for disconnected
         elif device_type == "widget":
@@ -304,7 +308,11 @@ class DeckManager:
                 g = int(round(min_color[1] + (max_color[1] - min_color[1]) * factor))
                 b = int(round(min_color[2] + (max_color[2] - min_color[2]) * factor))
                 draw.line([(x, 0), (x, height)], fill=(r, g, b))
-            
+        else:
+            img = Image.new("RGB", (width, height), color=bg_color)
+            draw = ImageDraw.Draw(img)
+
+        if is_gradient or is_weather_solid:
             # To ensure high contrast & elegant design, draw a translucent dark card container in the center
             try:
                 overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -317,9 +325,6 @@ class DeckManager:
                 overlay_draw = ImageDraw.Draw(overlay)
                 overlay_draw.rectangle([12, 12, 184, 184], fill=(0, 0, 0, 100))
                 img.paste(overlay, (0, 0), overlay)
-        else:
-            img = Image.new("RGB", (width, height), color=bg_color)
-            draw = ImageDraw.Draw(img)
 
         # 3. Render base icon (or default geometric symbol)
         icon_drawn = False
@@ -517,8 +522,8 @@ class DeckManager:
         font_label = ImageFont.load_default(size=font_size_label)
         
         # Determine text stroke for high-contrast on gradients
-        stroke_w = 1 if is_gradient else 0
-        stroke_f = (0, 0, 0) if is_gradient else None
+        stroke_w = 1 if (is_gradient or is_weather_solid) else 0
+        stroke_f = (0, 0, 0) if (is_gradient or is_weather_solid) else None
 
         # Draw label
         label_w = draw.textlength(label, font=font_label)

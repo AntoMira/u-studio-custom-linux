@@ -83,11 +83,14 @@ pc_monitor_port: 8085         # Port of LibreHardwareMonitor Web Server (default
 #       - "hue_toggle": Toggle power state of a Philips Hue light or smart plug (requires 'target')
 #       - "clock"     : Toggle display of high-precision current time/date widget
 #       - "pc_monitor": Toggle display of Windows PC performance stats (CPU, GPU, RAM, Disk)
+#       - "weather"   : Display current weather (temperature, chance of precipitation, and graphics)
+#       - "weather_forecast"   : Display today's weather forecast (min/max temperature)
+#       - "weather_forecast+1" : Display tomorrow's weather forecast (min/max temperature)
 #
 # - target:
 #     The unique ID of the target device on the local Philips Hue Bridge.
 #     Value: String representing bridge light index (e.g., "1", "2").
-#     *Not required when action_type is "clock" or "pc_monitor".
+#     *Not required when action_type is "clock", "pc_monitor", "weather", "weather_forecast", or "weather_forecast+1".
 #
 # - label:
 #     Text label shown at the top of the button key face.
@@ -123,7 +126,7 @@ buttons:
     label: "Monitor"
     icon: "plug"
 
-  - index: 3
+  - index: 4
     device_type: "plug"
     action_type: "hue_toggle"
     target: "7"  # Replace with your actual Philips Hue Smart Plug ID
@@ -138,16 +141,15 @@ buttons:
 
   - index: 10
     device_type: "widget"
-    action_type: "weather"
+    action_type: "weather_forecast"
     label: "Hoje"
 
   - index: 11
     device_type: "widget"
-    action_type: "weather+1"
+    action_type: "weather_forecast+1"
     label: "Amanha"
 
   - index: 12
     device_type: "widget"
-    action_type: "clock"
-    label: "Time"
-    icon: "clock"
+    action_type: "weather"
+    label: "Agora"

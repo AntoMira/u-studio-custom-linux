@@ -12,7 +12,8 @@ def test_config_parsing():
     Validates that config.yaml exists, parses safely, and conforms to expectations.
     """
     print("Testing config.yaml safety and parsing...")
-    config_path = "/home/zee/code/streamdeck/server/config.yaml"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, "config.yaml")
     assert os.path.exists(config_path), f"config.yaml not found at {config_path}"
     
     with open(config_path, "r") as f:

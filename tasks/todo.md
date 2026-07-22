@@ -195,11 +195,11 @@ Testing HueController simulation and toggles...
 ------------------------------------------------------------
 Testing DeckManager image rendering output...
 2026-05-25 23:23:25,872 [INFO] DeckManager: Initialized in SIMULATOR MODE. Generated images will be saved to output_sim/
-2026-05-25 23:23:25,882 [INFO] DeckManager (SIM): Saved button 9 screen to -> /home/zee/code/streamdeck/server/output_sim/button_9.png
-2026-05-25 23:23:25,884 [INFO] DeckManager (SIM): Saved button 8 screen to -> /home/zee/code/streamdeck/server/output_sim/button_8.png
-2026-05-25 23:23:25,887 [INFO] DeckManager (SIM): Saved button 7 screen to -> /home/zee/code/streamdeck/server/output_sim/button_7.png
-2026-05-25 23:23:25,890 [INFO] DeckManager (SIM): Saved button 6 screen to -> /home/zee/code/streamdeck/server/output_sim/button_6.png
-2026-05-25 23:23:25,892 [INFO] DeckManager (SIM): Saved button 5 screen to -> /home/zee/code/streamdeck/server/output_sim/button_5.png
+2026-05-25 23:23:25,882 [INFO] DeckManager (SIM): Saved button 9 screen to -> server/output_sim/button_9.png
+2026-05-25 23:23:25,884 [INFO] DeckManager (SIM): Saved button 8 screen to -> server/output_sim/button_8.png
+2026-05-25 23:23:25,887 [INFO] DeckManager (SIM): Saved button 7 screen to -> server/output_sim/button_7.png
+2026-05-25 23:23:25,890 [INFO] DeckManager (SIM): Saved button 6 screen to -> server/output_sim/button_6.png
+2026-05-25 23:23:25,892 [INFO] DeckManager (SIM): Saved button 5 screen to -> server/output_sim/button_5.png
 ✅ DeckManager image rendering output checked successfully.
 ------------------------------------------------------------
 Testing WeatherService logic and aggregation...

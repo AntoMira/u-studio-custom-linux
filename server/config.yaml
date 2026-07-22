@@ -58,7 +58,7 @@ screen_sleep_start: "23:59"   # Start of screen sleep window (default: "22:00")
 screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
 pc_monitor_mode: "pull"       # PC monitor mode: "pull" (LibreHardwareMonitor HTTP) or "push" (UDP broadcast)
-pc_monitor_ip: "192.168.31.101" # Replace with your Windows PC IP address (e.g. 192.168.31.X)
+pc_monitor_ip: "192.168.1.100" # Replace with your Windows PC IP address (e.g. 192.168.1.X)
 pc_monitor_port: 8085         # Port of LibreHardwareMonitor Web Server (default: 8085)
 
 # ==============================================================================

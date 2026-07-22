@@ -26,8 +26,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 class StreamDeckApp:
     def __init__(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         # Single Instance Lock Enforcement
-        self.lock_file_path = "/home/zee/code/streamdeck/server/app.lock"
+        self.lock_file_path = os.path.join(base_dir, "app.lock")
         disable_lock = os.getenv("DISABLE_LOCK", "False").lower() in ("true", "1", "yes")
         if not disable_lock:
             try:
@@ -62,7 +63,7 @@ class StreamDeckApp:
         logging.info("StreamDeckApp: Loading configuration files...")
         
         # 2. Load and parse config.yaml safely
-        self.config_path = "/home/zee/code/streamdeck/server/config.yaml"
+        self.config_path = os.path.join(base_dir, "config.yaml")
         self.buttons_config = {}
         self.font_size_label = 12
         self.font_size_status = 10

@@ -23,9 +23,14 @@ if systemctl is-active --quiet streamdeck.service; then
     sudo systemctl stop streamdeck.service
 fi
 
-# Copy service file to systemd directory using sudo
-echo "[INFO] Copying service configuration to $TARGET_DIR..."
-sudo cp "$SCRIPT_DIR/server/$SERVICE_FILE" "$TARGET_DIR/$SERVICE_FILE"
+# Render service file with actual user and directory paths
+CURRENT_USER="${SUDO_USER:-$USER}"
+SERVER_PATH="$SCRIPT_DIR/server"
+
+echo "[INFO] Configuring systemd service for user '$CURRENT_USER' at '$SERVER_PATH'..."
+sed -e "s|User=YOUR_USERNAME|User=$CURRENT_USER|g" \
+    -e "s|/path/to/streamdeck/server|$SERVER_PATH|g" \
+    "$SCRIPT_DIR/server/$SERVICE_FILE" | sudo tee "$TARGET_DIR/$SERVICE_FILE" > /dev/null
 
 # Reload systemd configuration
 echo "[INFO] Reloading systemd daemon..."

@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=zee
-WorkingDirectory=/home/zee/code/streamdeck/server
-ExecStart=/home/zee/code/streamdeck/server/run.sh
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/streamdeck/server
+ExecStart=/path/to/streamdeck/server/run.sh
 Restart=on-failure
 RestartSec=5
 StandardOutput=syslog

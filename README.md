@@ -28,7 +28,7 @@ This project is built using Python 3.9+. Navigate to the `server/` subdirectory 
 
 ```bash
 # Navigate to the server folder
-cd /home/zee/code/streamdeck/server
+cd server
 
 # Initialize virtual environment
 python3.9 -m venv venv
@@ -62,7 +62,7 @@ To control your lights, you need to configure the local network bridge connectio
 Create a `.env` file inside the `server/` directory by copying the example:
 
 ```bash
-cd /home/zee/code/streamdeck/server
+cd server
 cp .env.example .env
 ```
 
@@ -147,7 +147,7 @@ The Linux Stream Deck server contains a highly robust, recursive path-based WMI 
 Always navigate to the `server/` directory before running command tools:
 
 ```bash
-cd /home/zee/code/streamdeck/server
+cd server
 ```
 
 ### Verification Suite

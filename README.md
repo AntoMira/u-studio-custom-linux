@@ -1,5 +1,7 @@
 # Custom Ulanzi D200 Stream Deck + Philips Hue Integration
 
+![Ulanzi D200 Stream Deck Device](assets/device.jpg)
+
 This project is a highly customizable, local Python-based controller for the **Ulanzi D200 Stream Controller**, integrating directly with your local **Philips Hue REST API**. It allows the physical tactile LCD keys of the D200 to:
 1.  Toggle Philips Hue lights and smart plugs.
 2.  Adjust light brightness.

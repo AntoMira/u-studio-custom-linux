@@ -14,6 +14,15 @@ For developers and off-grid testing, the application includes a robust **Simulat
 
 ---
 
+## 💡 Motivation & Purpose
+
+The primary goal of this project is to connect the **Ulanzi D200 Stream Controller** directly to a **dedicated Linux server** as a standalone home automation and telemetry hub.
+
+By running the controller on a dedicated server rather than a primary workstation (PC or Mac):
+* **Centralized Operation:** Home appliances, lights, and smart plugs are managed 24/7 without requiring a personal desktop or laptop to remain powered on.
+* **Autonomous Controller:** The Stream Deck operates independently as an always-on physical smart control panel and desk widget.
+* **Future Remote Control:** It lays the groundwork to remotely power on, monitor, and execute commands on both Windows PC and Mac workstations from a single, centralized Linux server hub.
+
 ## 📂 Repository Structure
 
 The project is split into specialized subdirectories to keep server logic cleanly decoupled from clients:

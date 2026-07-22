@@ -198,3 +198,8 @@ This project makes use of the following awesome open-source projects and librari
 *   **[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)**: Open-source software for monitoring CPU, GPU, RAM, and Disk performance telemetry.
 *   **[Philips Hue API](https://developers.meethue.com/)**: Local REST API for Philips Hue bridge and smart device control.
 *   **[Pillow (PIL)](https://python-pillow.org/)**: Python Imaging Library used for real-time dynamic key screen rendering.
+*   **[Google Antigravity](https://deepmind.google/) & [Google Gemini](https://gemini.google.com/)**: AI pair programming platform and models used to architect, build, debug, and document this codebase.
+
+---
+
+*Built with ❤️ using **Google Antigravity** & **Google Gemini**.*

@@ -178,3 +178,14 @@ When `SIMULATOR_MODE=True` is enabled, the program launches an interactive conso
 You can manage the background runner daemon directly from the repository root:
 *   **Start & Enable Service:** Run `./start_service.sh` (installs and starts the systemd service to run on Linux boot).
 *   **Stop & Disable Service:** Run `./stop_service.sh` (stops and disables the background systemd service).
+
+---
+
+## 🙏 Credits & Acknowledgements
+
+This project makes use of the following awesome open-source projects and libraries:
+
+*   **[`strmdck`](https://pypi.org/project/strmdck/)**: Python library for communication and hardware interface with the Ulanzi D200 Stream Controller.
+*   **[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)**: Open-source software for monitoring CPU, GPU, RAM, and Disk performance telemetry.
+*   **[Philips Hue API](https://developers.meethue.com/)**: Local REST API for Philips Hue bridge and smart device control.
+*   **[Pillow (PIL)](https://python-pillow.org/)**: Python Imaging Library used for real-time dynamic key screen rendering.

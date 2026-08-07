@@ -946,6 +946,7 @@ class StreamDeckApp:
 
         keep_awake_override = (pc_override_active or hue_override_active)
 
+        should_sleep = False
         if keep_awake_override:
             should_sleep = False
         elif self.screen_sleep_timeout > 0:

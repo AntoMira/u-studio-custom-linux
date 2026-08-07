@@ -69,6 +69,17 @@ app.check_screen_sleep()
 print("[TEST] Screen state with PC 192.168.31.101 online:", app.deck_mgr.screen_on)
 assert app.deck_mgr.screen_on is True, "Screen should stay ON when PC 192.168.31.101 is online"
 
+print("[TEST] Verifying daytime recovery outside sleep window when screen was OFF...")
+app.hue._mock_states["2"] = {"on": False, "reachable": True}
+app.device_last_update.clear()
+app.screen_sleep_start = "23:59"
+app.screen_sleep_end = "07:00"
+app.screen_sleep_timeout = 300
+app.deck_mgr.screen_on = False # Manually turn screen OFF
+app.check_screen_sleep()
+print("[TEST] Screen state outside sleep window:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is True, "Screen should automatically be restored to ON outside sleep window"
+
 print("============================================================")
 print("🎉 ALL SCREEN SLEEP & WAKE VERIFICATION CHECKS PASSED!")
 print("============================================================")

@@ -244,7 +244,7 @@ class DeckManager:
 
         self._trigger_callbacks(button_index)
 
-    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None):
+    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
         * index: Button index (0 to 12)
@@ -361,7 +361,7 @@ class DeckManager:
             center_x, center_y = width // 2, height // 2 - 10
             r = 30
         # Fallback geometric shapes if no icon image was loaded
-        if not icon_drawn:
+        if not icon_drawn and (cpu_pct is None and mem_pct is None and temp_val is None):
             # Resolve the geometric shape to draw:
             # Check if icon_path is a known shape keyword, otherwise default to device_type
             shape_type = device_type
@@ -530,8 +530,84 @@ class DeckManager:
         label_w = draw.textlength(label, font=font_label)
         draw.text(((width - label_w) // 2, margin_label), label, fill=fg_color, font=font_label, stroke_width=stroke_w, stroke_fill=stroke_f)
 
+        # Render 3 vertical progress bars (CPU, MEM, TEMP) side-by-side if metrics are provided
+        if cpu_pct is not None or mem_pct is not None or temp_val is not None:
+            # Smooth gradient color interpolation based on percentage (0% Green -> 50% Yellow -> 100% Red)
+            def get_scale_color(pct: float):
+                if pct is None:
+                    return (100, 100, 100) # Gray fallback
+                p = min(100.0, max(0.0, float(pct))) / 100.0
+                green_color = (46, 213, 115)   # #2ed573 Bright Green
+                yellow_color = (255, 200, 0)   # #ffc800 Golden Yellow
+                red_color = (255, 40, 40)      # #ff2828 Vibrant Red
+
+                if p <= 0.5:
+                    # Interpolate from Green to Yellow
+                    factor = p / 0.5
+                    r = int(round(green_color[0] + (yellow_color[0] - green_color[0]) * factor))
+                    g = int(round(green_color[1] + (yellow_color[1] - green_color[1]) * factor))
+                    b = int(round(green_color[2] + (yellow_color[2] - green_color[2]) * factor))
+                else:
+                    # Interpolate from Yellow to Red
+                    factor = (p - 0.5) / 0.5
+                    r = int(round(yellow_color[0] + (red_color[0] - yellow_color[0]) * factor))
+                    g = int(round(yellow_color[1] + (red_color[1] - yellow_color[1]) * factor))
+                    b = int(round(yellow_color[2] + (red_color[2] - yellow_color[2]) * factor))
+                return (r, g, b)
+
+            l1, l2, l3 = col_labels if (col_labels and len(col_labels) == 3) else ("CPU", "MEM", "TMP")
+            columns_data = [
+                (l1, cpu_pct, False, "%"),
+                (l2, mem_pct, False, "%"),
+                (l3, temp_val, True, "°C")
+            ]
+
+            # Layout metrics (196x196)
+            col_width = 38
+            col_gap = 20
+            total_cols_width = (3 * col_width) + (2 * col_gap) # 114 + 40 = 154
+            left_margin = (width - total_cols_width) // 2 # 21px
+
+            font_col_title = ImageFont.load_default(size=18)
+            font_col_val = ImageFont.load_default(size=22)
+
+            bar_top_y = 65
+            bar_height = 80
+
+            for i, (c_label, val, is_t, unit) in enumerate(columns_data):
+                col_x = left_margin + i * (col_width + col_gap)
+
+                # 1. Render Top Column Title (CPU, MEM, TMP)
+                title_w = draw.textlength(c_label, font=font_col_title)
+                draw.text((col_x + (col_width - title_w) / 2, 42), c_label, fill=(220, 220, 220), font=font_col_title)
+
+                # 2. Render Vertical Track (background)
+                draw.rectangle([col_x, bar_top_y, col_x + col_width, bar_top_y + bar_height], fill=(40, 40, 40))
+
+                # 3. Render Filled Vertical Bar (bottom-up) with interpolated solid color
+                if val is not None:
+                    if is_t:
+                        # Temperature scale: 20°C (0% height) to 100°C (100% height)
+                        pct_clamped = min(100.0, max(0.0, ((float(val) - 20.0) / (100.0 - 20.0)) * 100.0))
+                    else:
+                        # Standard usage % (0% to 100%)
+                        pct_clamped = min(100.0, max(0.0, float(val)))
+
+                    fill_h = int((pct_clamped / 100.0) * bar_height)
+                    if fill_h > 0:
+                        bar_color = get_scale_color(pct_clamped)
+                        fill_top_y = bar_top_y + bar_height - fill_h
+                        draw.rectangle([col_x, fill_top_y, col_x + col_width, bar_top_y + bar_height], fill=bar_color)
+
+                # 4. Render Bottom Column Value (clean numbers only, e.g. "35", "62", "42")
+                val_str = f"{int(round(val))}" if val is not None else "--"
+                val_w = draw.textlength(val_str, font=font_col_val)
+                draw.text((col_x + (col_width - val_w) / 2, bar_top_y + bar_height + 6), val_str, fill=(255, 255, 255), font=font_col_val)
+
         # 5. Render Status / Value Text (at the bottom)
-        if not reachable:
+        if cpu_pct is not None or mem_pct is not None or temp_val is not None:
+            status_text = ""
+        elif not reachable:
             status_text = "OFFLINE"
         elif text_override:
             status_text = text_override

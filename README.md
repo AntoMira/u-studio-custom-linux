@@ -67,23 +67,57 @@ To control your lights, you need to configure the local network bridge connectio
     ```
     *   The bridge will return a JSON response containing a generated `username` string (this is your API Key). Keep this private.
 
----
+### 3. Environment Secrets (.env) & OpenWeather API
 
-### 3. Environment Secrets (.env)
-Create a `.env` file inside the `server/` directory by copying the example:
+Create a `.env` file inside the `server/` directory by copying the example template:
 
 ```bash
 cd server
 cp .env.example .env
 ```
 
-Edit the `server/.env` file and input your settings:
+Edit the `server/.env` file and configure your credentials:
 ```env
 HUE_BRIDGE_IP=192.168.1.100
 HUE_USERNAME=your_generated_api_username
-SIMULATOR_MODE=True  # Set to False to communicate with physical D200 hardware
-TIMEZONE=America/Sao_Paulo  # Configure your preferred local timezone
+SIMULATOR_MODE=True            # Set to False to communicate with physical D200 hardware
+TIMEZONE=America/Sao_Paulo    # Configure your preferred local timezone
+
+# OpenWeather API Configuration (Required for weather, weather_forecast, and weather_forecast+1)
+OPENWEATHER_API_KEY=your_openweather_api_key
+OPENWEATHER_CITY=Sao Paulo,BR
 ```
+
+#### How to get an OpenWeather API Key:
+1. Register a free account at **[OpenWeatherMap](https://home.openweathermap.org/users/sign_up)**.
+2. Go to **API Keys** in your user dashboard and copy your default API key (or generate a new one).
+3. Set `OPENWEATHER_API_KEY` in `server/.env` and specify your location in `OPENWEATHER_CITY` (e.g., `Sao Paulo,BR`, `Lisbon,PT`, or `New York,US`).
+
+---
+
+## ☀️ Weather Widgets & Temperature Color Gradients
+
+The Stream Deck features real-time weather widgets for current conditions (`action_type: weather`), today's forecast (`action_type: weather_forecast`), and tomorrow's forecast (`action_type: weather_forecast+1`).
+
+### 1. Dynamic Temperature Gradient Backgrounds
+When displaying weather forecasts, the button background dynamically interpolates a horizontal color gradient derived from the predicted **Minimum** (left) and **Maximum** (right) temperatures:
+
+- **$\le$ 0°C**: Crisp Pure White (`#FFFFFF`)
+- **10°C**: Electric Cyan (`#00FFFF`)
+- **24°C**: Deep Oceanic Blue (`#0000FF`)
+- **30°C**: Sunset Amber Orange (`#FFA500`)
+- **$\ge$ 50°C**: Intense Crimson Red (`#FF0000`)
+
+*Example:* A forecast predicting `17°C` to `30°C` generates a continuous smooth gradient transitioning from Deep Blue on the left to Vibrant Orange on the right, overlaid with a translucent dark container for high-contrast legibility.
+
+### 2. Geometric Weather Icons
+Weather conditions map directly to clean geometric vector drawings rendered in crisp white:
+* **`clear`**: Sun outline with 8 radiating solar rays.
+* **`clouds`**: Fluffy cloud silhouette.
+* **`rain`**: Cloud silhouette with falling diagonal raindrops.
+* **`thunderstorm`**: Cloud silhouette with a center lightning bolt.
+* **`snow`**: Cloud silhouette with delicate snowflake crosses.
+* **`mist`**: Layered horizontal fog/breeze lines.
 
 ---
 
@@ -113,11 +147,17 @@ To run this application as a non-root user (without `sudo`), you must grant your
 
 ---
 
-## 🖥️ PC Performance Monitoring Telemetry (HTTP Pull via LibreHardwareMonitor)
+## 🖥️ PC & Server Performance Monitoring Widgets (HTTP Pull via [LibreHardwareMonitor](https://librehardwaremonitor.com/))
 
-The Stream Deck features a premium performance monitoring widget that displays real-time statistics of your Windows PC (CPU load & temp, GPU load & temp, RAM usage, and Disk storage load) directly on button index 9, rotating through a carousel every 5 seconds.
+The Stream Deck features multi-device performance monitoring widgets rendered in **3 vertical columns** (`CPU`/`MEM`/`TMP` or `GPU`/`RAM`/`TMP`). 
 
-Instead of running heavy Python or binary clients on Windows, this project uses a high-performance **HTTP Pull** architecture. The Linux daemon periodically polls the integrated JSON API of **LibreHardwareMonitor** running on your Windows PC.
+### Key Features & Architecture:
+- **Local Server (`localhost`) Monitoring**: Monitors the host Linux server using physical RAM calculation (`(MemTotal - MemFree - Buffers - Cached - SReclaimable)`) and local thermal zone sensors.
+- **Per-Button Configuration**: Each button can monitor a different device by configuring its own `ip`, `port`, `sync_interval`, and optional `temp_sensor` directly under its configuration block in `server/config.yaml`.
+- **Dedicated GPU Monitor (`action_type: gpu_monitor`)**: Dedicated widget displaying GPU Core Load (`GPU`), VRAM Load (`RAM`), and GPU Temperature (`TMP`).
+- **Custom Temperature Sensor Override (`temp_sensor`)**: Ability to specify target sensors (e.g., `temp_sensor: "Core (Tctl/Tdie)"` for AMD Ryzen CPUs or `temp_sensor: "GPU Core"` for NVIDIA/AMD GPUs).
+- **Sensor Inspector Utility (`./list_sensors.sh`)**: Built-in CLI tool to scan and list all available temperature sensors from configured hosts.
+- **Dynamic Continuous Scale Gradient**: Smooth RGB color interpolation from Green (`0%` / `20°C`) $\rightarrow$ Yellow (`50%` / `60°C`) $\rightarrow$ Red (`100%` / `100°C`).
 
 ### 1. Windows PC Configuration
 
@@ -126,30 +166,54 @@ To enable telemetry polling from the Linux host:
 1. **Activate the LHM Web Server:**
    * Open **LibreHardwareMonitor** on your Windows PC.
    * Go to **Options** $\rightarrow$ **Web Server** $\rightarrow$ click **Run**.
-   * *(Optional)* Go to **Options** $\rightarrow$ **Web Server** $\rightarrow$ **Port** to verify the port is set to `8085` (or modify `pc_monitor_port` in `config.yaml` to match).
+   * *(Optional)* Go to **Options** $\rightarrow$ **Web Server** $\rightarrow$ **Port** to verify the port is set to `8085`.
 
 2. **Open the Windows Firewall Port:**
-   * Open **PowerShell** as **Administrator** on Windows and run this command to allow the Linux Stream Deck to reach the LHM JSON API:
+   * Open **PowerShell** as **Administrator** on Windows and run:
      ```powershell
      New-NetFirewallRule -DisplayName "LibreHardwareMonitor WebServer" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8085
      ```
 
-### 2. Stream Deck Configuration (`server/config.yaml`)
+### 2. Sensor Inspector Tool (`./list_sensors.sh`)
 
-Update the global settings in `server/config.yaml` to configure LHM Pull mode:
-
-```yaml
-pc_monitor_mode: "pull"          # Set to "pull" to use LibreHardwareMonitor API
-pc_monitor_ip: "192.168.31.101" # Set to the local network IP address of your Windows PC
-pc_monitor_port: 8085            # The web server port (default: 8085)
+Run the inspector tool from the root directory to discover temperature sensors on your devices:
+```bash
+./list_sensors.sh
 ```
 
-### 3. How the WMI Path Parser Works
-The Linux Stream Deck server contains a highly robust, recursive path-based WMI tree parser (`find_sensor_by_path`). Because hardware component names vary across systems (e.g., `"Intel Core i9-13900K"`, `"AMD Ryzen 9 7950X"`, `"NVIDIA GeForce RTX 4090"`), the parser scans the telemetry payload using extensive vendor keyword fallbacks:
-*   **CPU statistics:** Scans for keywords like `intel`, `amd`, `core`, `ryzen`, `cpu`, or `processor` on the first hierarchical level to resolve `cpu package` temperature and `cpu total` load across any architecture.
-*   **GPU statistics:** Resolves core temperatures and load percentages for NVIDIA Geforce/RTX (keywords `nvidia`, `geforce`, `rtx`) and AMD Radeon (keywords `radeon`).
-*   **RAM & Storage:** Traverses generic memory loads and active SSD/HDD/Disk storage capacities.
-*   **Offline Fallback:** If the Windows PC is powered off or unreachable for more than 15 seconds, the Stream Deck button automatically falls back to a solid dark-red display labeled **OFFLINE**, keeping the daemon completely crash-free.
+### 3. Stream Deck Configuration (`server/config.yaml`)
+
+Configure buttons individually in `server/config.yaml`:
+
+```yaml
+buttons:
+  # Host Server Local Monitoring (Physical RAM + Host Temp)
+  - index: 5
+    device_type: "widget"
+    action_type: "pc_monitor"
+    label: "Servidor"
+    ip: "localhost"
+    sync_interval: 15
+
+  # Remote PC CPU Monitoring with specific AMD Ryzen sensor
+  - index: 6
+    device_type: "widget"
+    action_type: "pc_monitor"
+    label: "PC Gamer"
+    ip: "192.168.31.101"
+    port: 8085
+    sync_interval: 15
+    temp_sensor: "Core (Tctl/Tdie)"
+
+  # Remote PC Dedicated GPU Monitoring (RTX 5080)
+  - index: 7
+    device_type: "widget"
+    action_type: "gpu_monitor"
+    label: "RTX 5080"
+    ip: "192.168.31.101"
+    port: 8085
+    sync_interval: 15
+```
 
 ---
 
@@ -195,7 +259,7 @@ You can manage the background runner daemon directly from the repository root:
 This project makes use of the following awesome open-source projects and libraries:
 
 *   **[`strmdck`](https://pypi.org/project/strmdck/)**: Python library for communication and hardware interface with the Ulanzi D200 Stream Controller.
-*   **[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)**: Open-source software for monitoring CPU, GPU, RAM, and Disk performance telemetry.
+*   **[LibreHardwareMonitor](https://librehardwaremonitor.com/)**: Open-source software for monitoring CPU, GPU, RAM, and Disk performance telemetry.
 *   **[Philips Hue API](https://developers.meethue.com/)**: Local REST API for Philips Hue bridge and smart device control.
 *   **[Pillow (PIL)](https://python-pillow.org/)**: Python Imaging Library used for real-time dynamic key screen rendering.
 *   **[Google Antigravity](https://deepmind.google/) & [Google Gemini](https://gemini.google.com/)**: AI pair programming platform and models used to architect, build, debug, and document this codebase.

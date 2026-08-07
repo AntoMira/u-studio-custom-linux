@@ -42,10 +42,6 @@
 # screen_sleep_timeout:
 #   Inactivity duration in seconds before turning off screen backlight automatically.
 #   Value: Positive integer (default: 300 for 5 minutes), or 0 to disable inactivity sleep.
-#
-# pc_monitor_port:
-#   UDP port to listen for incoming Windows PC telemetry performance statistics packets.
-#   Value: Positive integer between 1 and 65535 (default: 9999).
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
@@ -57,9 +53,6 @@ state_sync_interval: 5  # Polling interval in seconds to sync device states from
 screen_sleep_start: "23:59"   # Start of screen sleep window (default: "22:00")
 screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
-pc_monitor_mode: "pull"       # PC monitor mode: "pull" (LibreHardwareMonitor HTTP) or "push" (UDP broadcast)
-pc_monitor_ip: "192.168.1.100" # Replace with your Windows PC IP address (e.g. 192.168.1.X)
-pc_monitor_port: 8085         # Port of LibreHardwareMonitor Web Server (default: 8085)
 
 # ==============================================================================
 # BUTTON MAPPINGS
@@ -102,6 +95,12 @@ pc_monitor_port: 8085         # Port of LibreHardwareMonitor Web Server (default
 #     Values:
 #       - Valid path relative to streamdeck folder (e.g., "assets/icons/clock.png")
 #       - Dynamic shape keywords: "light", "plug", "ceiling", "lamp", "3dprinter", "clock", "pc_monitor", "cpu", "gpu", "ram", "disk"
+# - pc_monitor attributes (optional per-button overrides for multiple device monitoring):
+#     - mode: "pull" (HTTP LibreHardwareMonitor) or "push" (UDP broadcast)
+#     - ip  : Host IP address or "localhost" (e.g. "192.168.1.100", "localhost")
+#     - port: Telemetry service port (default: 8085 for pull, 9999 for push)
+#     - sync_interval: Update interval in seconds for this specific device (default: 60)
+#     - temp_sensor  : Optional specific sensor name keyword (e.g. "Core (Tctl/Tdie)", "CPU Package", "Temperature #1")
 # ==============================================================================
 
 buttons:
@@ -133,11 +132,36 @@ buttons:
     label: "Impressora 3D"
     icon: "3dprinter"
 
-  - index: 9
+  - index: 5
     device_type: "widget"
     action_type: "pc_monitor"
-    label: "PC Stats"
+    label: "Servidor"
+    mode: "pull"
+    ip: "localhost"
+    port: 8085
+    sync_interval: 15
     icon: "pc_monitor"
+
+  - index: 6
+    device_type: "widget"
+    action_type: "pc_monitor"
+    label: "PC"
+    mode: "pull"
+    ip: "192.168.31.101"
+    port: 8085
+    sync_interval: 15
+    temp_sensor: "Core (Tctl/Tdie)"
+    icon: "pc_monitor"
+
+  - index: 7
+    device_type: "widget"
+    action_type: "gpu_monitor"
+    label: "RTX 5080"
+    mode: "pull"
+    ip: "192.168.31.101"
+    port: 8085
+    sync_interval: 15
+    icon: "gpu"
 
   - index: 10
     device_type: "widget"

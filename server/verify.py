@@ -40,13 +40,16 @@ def test_config_parsing():
     assert "state_sync_interval" in config, "Missing 'state_sync_interval' root in config.yaml"
     assert isinstance(config["state_sync_interval"], int), "state_sync_interval must be an integer"
     assert config["state_sync_interval"] > 0, "state_sync_interval must be a positive integer greater than 0"
-    assert "pc_monitor_mode" in config, "Missing 'pc_monitor_mode' root in config.yaml"
-    assert config["pc_monitor_mode"] in ("pull", "push"), "pc_monitor_mode must be 'pull' or 'push'"
-    assert "pc_monitor_ip" in config, "Missing 'pc_monitor_ip' root in config.yaml"
-    assert isinstance(config["pc_monitor_ip"], str), "pc_monitor_ip must be a string"
-    assert "pc_monitor_port" in config, "Missing 'pc_monitor_port' root in config.yaml"
-    assert isinstance(config["pc_monitor_port"], int), "pc_monitor_port must be an integer"
-    assert 1 <= config["pc_monitor_port"] <= 65535, "pc_monitor_port must be a valid port (1-65535)"
+    # Verify pc_monitor button attributes
+    pc_buttons = [b for b in buttons if b.get("action_type") == "pc_monitor"]
+    assert len(pc_buttons) > 0, "Expected at least one pc_monitor button configured"
+    for b in pc_buttons:
+        if "mode" in b:
+            assert b["mode"] in ("pull", "push"), "Button mode must be 'pull' or 'push'"
+        if "port" in b:
+            assert isinstance(b["port"], int) and 1 <= b["port"] <= 65535, "Button port must be valid"
+        if "sync_interval" in b:
+            assert isinstance(b["sync_interval"], int) and b["sync_interval"] > 0, "Button sync_interval must be > 0"
 
     print("✅ config.yaml safety validation passed successfully.")
 
@@ -87,31 +90,50 @@ def test_deck_manager_rendering():
     print("Testing DeckManager image rendering output...")
     manager = DeckManager(simulator_mode=True)
     
-    # Render test button (online)
-    test_btn_idx = 9
+    test_btn_offline_idx = 5
+    test_ceiling_idx = 3
+    test_lamp_idx = 6
+    test_printer_idx = 4
+
+    # Render test 3-bar GPU monitor button (RTX 5080)
     manager.update_button(
-        index=test_btn_idx,
-        label="Test Unit",
-        device_type="light",
+        index=7,
+        label="RTX 5080",
+        device_type="widget",
         is_on=True,
-        brightness=85,
-        icon_path=None,
-        reachable=True
+        reachable=True,
+        cpu_pct=65.0,
+        mem_pct=52.0,
+        temp_val=58.0,
+        col_labels=("GPU", "RAM", "TMP")
+    )
+
+    # Render test 3-bar monitor button for PC Gamer (remote)
+    manager.update_button(
+        index=8,
+        label="PC Gamer",
+        device_type="widget",
+        is_on=True,
+        reachable=True,
+        cpu_pct=78.0,
+        mem_pct=45.0,
+        temp_val=68.0
     )
     
-    # Render test button (offline)
-    test_btn_offline_idx = 8
+    # Render test 3-bar monitor button for Servidor (localhost)
     manager.update_button(
-        index=test_btn_offline_idx,
-        label="Offline Unit",
-        device_type="plug",
-        is_on=False,
-        icon_path=None,
-        reachable=False
+        index=9,
+        label="Servidor",
+        device_type="widget",
+        is_on=True,
+        reachable=True,
+        cpu_pct=25.0,
+        mem_pct=52.0,
+        temp_val=41.0
     )
     
     # Render ceiling test button
-    test_ceiling_idx = 7
+    test_ceiling_idx = 1
     manager.update_button(
         index=test_ceiling_idx,
         label="Ceiling Light",
@@ -184,7 +206,8 @@ def test_deck_manager_rendering():
         target_path = os.path.join(manager.output_sim_dir, f"button_2.png")
         assert os.path.exists(target_path), f"Simulated {shape} button image not saved"
     
-    # Verify image output characteristics (online)
+    # Verify button image file creation
+    test_btn_idx = 9
     target_path = os.path.join(manager.output_sim_dir, f"button_{test_btn_idx}.png")
     assert os.path.exists(target_path), f"Simulated button image not saved to {target_path}"
     

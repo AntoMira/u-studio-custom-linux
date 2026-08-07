@@ -75,11 +75,12 @@ class StreamDeckApp:
         self.screen_sleep_end = "07:00"
         self.screen_sleep_timeout = 300
         self.last_activity_time = time.time()
-        self.pc_monitor_mode = "push"
+        self.pc_monitor_mode = "pull"
         self.pc_monitor_ip = ""
-        self.pc_monitor_port = 9999
-        self.pc_stats = {}
-        self.pc_stats_last_update = 0
+        self.pc_monitor_port = 8085
+        self.pc_sync_interval = 60
+        self.device_stats = {}      # Map (ip, port) -> telemetry dict
+        self.device_last_update = {} # Map (ip, port) -> timestamp
         self.pc_monitor_buttons = []
         self.load_config()
 
@@ -133,9 +134,10 @@ class StreamDeckApp:
             self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")
             self.screen_sleep_end = config_data.get("screen_sleep_end", "07:00")
             self.screen_sleep_timeout = int(config_data.get("screen_sleep_timeout", 300))
-            self.pc_monitor_mode = config_data.get("pc_monitor_mode", "push")
-            self.pc_monitor_ip = config_data.get("pc_monitor_ip", "")
-            self.pc_monitor_port = int(config_data.get("pc_monitor_port", 9999 if self.pc_monitor_mode == "push" else 8085))
+            self.pc_monitor_mode = config_data.get("pc_monitor_mode", "pull")
+            self.pc_monitor_ip = config_data.get("pc_monitor_ip", "localhost")
+            self.pc_monitor_port = int(config_data.get("pc_monitor_port", 8085))
+            self.pc_sync_interval = int(config_data.get("pc_sync_interval", 60))
             
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
@@ -429,7 +431,7 @@ class StreamDeckApp:
                 action_type = config.get("action_type")
                 if action_type == "clock":
                     self.clock_buttons.append(index)
-                elif action_type == "pc_monitor":
+                elif action_type in ("pc_monitor", "gpu_monitor"):
                     self.pc_monitor_buttons.append(index)
 
         # Start the clock widget background thread if there are any clock buttons
@@ -501,6 +503,32 @@ class StreamDeckApp:
                 return val
         return None
 
+    def find_any_temperature_sensor(self, node):
+        """
+        Fallback recursive search for any temperature sensor with '°C' in its Value field.
+        Prioritizes nodes containing 'cpu', 'package', or 'core' in their text label.
+        """
+        if not node:
+            return None
+
+        # Check children for Temperature type or °C
+        children = node.get("Children", [])
+        for child in children:
+            t_type = child.get("Type", "")
+            val_str = str(child.get("Value", ""))
+            text_str = child.get("Text", "").lower()
+
+            if t_type == "Temperature" or "°c" in val_str.lower():
+                parsed = self.parse_lhm_value(val_str)
+                if parsed is not None and 15.0 <= parsed <= 115.0:
+                    return parsed
+
+        for child in children:
+            found = self.find_any_temperature_sensor(child)
+            if found is not None:
+                return found
+        return None
+
     def parse_lhm_value(self, val_str):
         if val_str is None:
             return None
@@ -515,195 +543,322 @@ class StreamDeckApp:
 
     def run_pc_monitor_pull_daemon(self):
         """
-        Daemon thread task fetching data.json from LibreHardwareMonitor web server.
+        Daemon thread task fetching data.json from LibreHardwareMonitor web servers
+        for all registered pc_monitor buttons.
         """
         logging.info("StreamDeckApp: Background PC Monitor HTTP Pull Daemon started.")
         while self.running:
-            if not self.pc_monitor_ip:
-                logging.warning("StreamDeckApp: PC Monitor mode is 'pull' but pc_monitor_ip is empty.")
-                time.sleep(5)
-                continue
-                
-            url = f"http://{self.pc_monitor_ip}:{self.pc_monitor_port}/data.json"
-            try:
-                # 2-second timeout as specified in the plan
-                response = requests.get(url, timeout=2.0)
-                if response.status_code == 200:
-                    tree = response.json()
-                    
-                    # 1. Parse PC Name from root or first child
-                    pc_name = tree.get("Text", "PC")
-                    if pc_name == "SensorTree" and tree.get("Children"):
-                        pc_name = tree["Children"][0].get("Text", "PC")
-                    
-                    # 2. Extract metrics using robust lists of candidate paths
-                    cpu_temp_paths = [
-                        ["intel", "temperatures", "cpu package"],
-                        ["amd", "temperatures", "cpu package"],
-                        ["core", "temperatures", "cpu package"],
-                        ["ryzen", "temperatures", "cpu package"],
-                        ["cpu", "temperatures", "cpu package"],
-                        ["intel", "temperatures", "core max"],
-                        ["amd", "temperatures", "core max"],
-                        ["core", "temperatures", "core max"],
-                        ["cpu", "temperatures", "core max"],
-                        ["intel", "temperatures", "cpu total"],
-                        ["amd", "temperatures", "cpu total"],
-                        ["cpu", "temperatures", "cpu total"],
-                        ["cpu", "temperatures", "core (tctl/tdie)"],
-                        ["cpu", "temperatures", "core temperature"],
-                    ]
-                    cpu_usage_paths = [
-                        ["intel", "load", "cpu total"],
-                        ["amd", "load", "cpu total"],
-                        ["core", "load", "cpu total"],
-                        ["ryzen", "load", "cpu total"],
-                        ["cpu", "load", "cpu total"],
-                        ["intel", "load", "total"],
-                        ["amd", "load", "total"],
-                        ["cpu", "load", "total"],
-                        ["cpu", "load", "cpu"],
-                    ]
-                    gpu_temp_paths = [
-                        ["nvidia", "temperatures", "gpu core"],
-                        ["geforce", "temperatures", "gpu core"],
-                        ["radeon", "temperatures", "gpu core"],
-                        ["gpu", "temperatures", "gpu core"],
-                        ["nvidia", "temperatures", "gpu temperature"],
-                        ["radeon", "temperatures", "gpu temperature"],
-                        ["gpu", "temperatures", "gpu temperature"],
-                    ]
-                    gpu_usage_paths = [
-                        ["nvidia", "load", "gpu core"],
-                        ["geforce", "load", "gpu core"],
-                        ["radeon", "load", "gpu core"],
-                        ["gpu", "load", "gpu core"],
-                        ["nvidia", "load", "gpu memory"],
-                        ["gpu", "load", "gpu memory"],
-                        ["gpu", "load", "gpu"],
-                    ]
-                    ram_usage_paths = [
-                        ["generic memory", "load", "memory"],
-                        ["memory", "load", "memory"],
-                        ["memory", "load", "memory load"],
-                    ]
-                    disk_usage_paths = [
-                        ["hdd", "load", "used space"],
-                        ["ssd", "load", "used space"],
-                        ["drive", "load", "used space"],
-                        ["storage", "load", "used space"],
-                        ["disk", "load", "used space"],
-                    ]
-                    
-                    cpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, cpu_temp_paths))
-                    cpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, cpu_usage_paths)) or 0.0
-                    gpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, gpu_temp_paths))
-                    gpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, gpu_usage_paths)) or 0.0
-                    ram_usage = self.parse_lhm_value(self.get_sensor_value(tree, ram_usage_paths)) or 0.0
-                    disk_usage = self.parse_lhm_value(self.get_sensor_value(tree, disk_usage_paths)) or 0.0
-                    
-                    self.pc_stats = {
-                        "pc_name": pc_name,
-                        "cpu_usage": cpu_usage,
-                        "cpu_temp": cpu_temp,
-                        "gpu_usage": gpu_usage,
-                        "gpu_temp": gpu_temp,
-                        "ram_usage": ram_usage,
-                        "disk_usage": disk_usage,
-                    }
-                    self.pc_stats_last_update = time.time()
-                else:
-                    logging.warning(f"StreamDeckApp: LHM server returned status code {response.status_code}")
-            except Exception as e:
-                # Capture connection timeouts and errors gracefully to trigger offline display
-                logging.debug(f"StreamDeckApp: Failed to fetch LHM metrics: {e}")
-                
+            # Gather all unique target endpoints (ip, port) configured across buttons
+            targets = set()
+            for index in self.pc_monitor_buttons:
+                config = self.buttons_config.get(index, {})
+                btn_mode = config.get("mode", self.pc_monitor_mode)
+                if btn_mode == "pull":
+                    btn_ip = config.get("ip", self.pc_monitor_ip).strip()
+                    btn_port = int(config.get("port", self.pc_monitor_port))
+                    if btn_ip and btn_ip.lower() not in ("localhost", "127.0.0.1", "::1"):
+                        targets.add((btn_ip, btn_port))
+
+            for ip, port in targets:
+                url = f"http://{ip}:{port}/data.json"
+                try:
+                    response = requests.get(url, timeout=2.0)
+                    if response.status_code == 200:
+                        tree = response.json()
+                        pc_name = tree.get("Text", "PC")
+                        if pc_name == "SensorTree" and tree.get("Children"):
+                            pc_name = tree["Children"][0].get("Text", "PC")
+
+                        cpu_temp_paths = [
+                            ["cpu", "temperatures", "core (tctl/tdie)"],
+                            ["amd", "temperatures", "core (tctl/tdie)"],
+                            ["ryzen", "temperatures", "core (tctl/tdie)"],
+                            ["cpu", "temperatures", "ccd1 (tdie)"],
+                            ["amd", "temperatures", "ccd1 (tdie)"],
+                            ["intel", "temperatures", "cpu package"],
+                            ["amd", "temperatures", "cpu package"],
+                            ["core", "temperatures", "cpu package"],
+                            ["ryzen", "temperatures", "cpu package"],
+                            ["cpu", "temperatures", "cpu package"],
+                            ["intel", "temperatures", "core max"],
+                            ["amd", "temperatures", "core max"],
+                            ["core", "temperatures", "core max"],
+                            ["cpu", "temperatures", "core max"],
+                            ["intel", "temperatures", "cpu total"],
+                            ["amd", "temperatures", "cpu total"],
+                            ["cpu", "temperatures", "cpu total"],
+                            ["cpu", "temperatures", "core temperature"],
+                            ["cpu", "temperatures"],
+                            ["temperatures", "cpu"],
+                            ["temperatures", "package"],
+                            ["temperatures", "core"],
+                            ["temperatures"]
+                        ]
+                        cpu_usage_paths = [
+                            ["intel", "load", "cpu total"],
+                            ["amd", "load", "cpu total"],
+                            ["core", "load", "cpu total"],
+                            ["ryzen", "load", "cpu total"],
+                            ["cpu", "load", "cpu total"],
+                            ["intel", "load", "total"],
+                            ["amd", "load", "total"],
+                            ["cpu", "load", "total"],
+                            ["cpu", "load", "cpu"],
+                            ["load", "cpu total"],
+                            ["load", "total"],
+                        ]
+                        ram_usage_paths = [
+                            ["generic memory", "load", "memory"],
+                            ["memory", "load", "memory"],
+                            ["memory", "load", "memory load"],
+                            ["load", "memory"],
+                        ]
+
+                        gpu_temp_paths = [
+                            ["nvidia", "temperatures", "gpu core"],
+                            ["geforce", "temperatures", "gpu core"],
+                            ["radeon", "temperatures", "gpu core"],
+                            ["gpu", "temperatures", "gpu core"],
+                            ["nvidia", "temperatures", "gpu temperature"],
+                            ["radeon", "temperatures", "gpu temperature"],
+                            ["gpu", "temperatures", "gpu temperature"],
+                            ["gpu core"],
+                        ]
+                        gpu_usage_paths = [
+                            ["nvidia", "load", "gpu core"],
+                            ["geforce", "load", "gpu core"],
+                            ["radeon", "load", "gpu core"],
+                            ["gpu", "load", "gpu core"],
+                            ["nvidia", "load", "gpu"],
+                            ["gpu", "load", "gpu"],
+                        ]
+                        gpu_vram_paths = [
+                            ["nvidia", "load", "gpu memory"],
+                            ["geforce", "load", "gpu memory"],
+                            ["radeon", "load", "gpu memory"],
+                            ["gpu", "load", "gpu memory"],
+                            ["nvidia", "load", "gpu memory used"],
+                            ["gpu", "load", "gpu memory used"],
+                        ]
+
+                        cpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, cpu_temp_paths))
+                        if cpu_temp is None:
+                            cpu_temp = self.find_any_temperature_sensor(tree)
+
+                        cpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, cpu_usage_paths)) or 0.0
+                        ram_usage = self.parse_lhm_value(self.get_sensor_value(tree, ram_usage_paths)) or 0.0
+
+                        gpu_temp = self.parse_lhm_value(self.get_sensor_value(tree, gpu_temp_paths))
+                        gpu_usage = self.parse_lhm_value(self.get_sensor_value(tree, gpu_usage_paths)) or 0.0
+                        gpu_vram = self.parse_lhm_value(self.get_sensor_value(tree, gpu_vram_paths)) or 0.0
+
+                        self.device_stats[(ip, port)] = {
+                            "pc_name": pc_name,
+                            "cpu_usage": round(cpu_usage, 1),
+                            "cpu_temp": round(cpu_temp, 1) if cpu_temp is not None else None,
+                            "ram_usage": round(ram_usage, 1),
+                            "gpu_usage": round(gpu_usage, 1),
+                            "gpu_vram": round(gpu_vram, 1),
+                            "gpu_temp": round(gpu_temp, 1) if gpu_temp is not None else None,
+                            "tree": tree
+                        }
+                        self.device_last_update[(ip, port)] = time.time()
+                except Exception as e:
+                    logging.debug(f"StreamDeckApp: Failed to fetch LHM metrics for {ip}:{port}: {e}")
+
             time.sleep(5)
+
+    def get_local_server_stats(self):
+        """
+        Collects system metrics from the host server (CPU usage, Memory usage, CPU Temp).
+        Supports Linux, Windows, and macOS via native system files or fallbacks.
+        """
+        cpu_usage = None
+        mem_usage = None
+        temp_val = None
+
+        # 1. CPU Usage (%)
+        try:
+            # Read /proc/stat if Linux
+            if os.path.exists("/proc/stat"):
+                with open("/proc/stat", "r") as f:
+                    fields = f.readline().split()[1:]
+                    vals = [float(x) for x in fields]
+                    idle = vals[3] + vals[4]
+                    total = sum(vals)
+                    if hasattr(self, "_prev_cpu"):
+                        prev_idle, prev_total = self._prev_cpu
+                        idle_delta = idle - prev_idle
+                        total_delta = total - prev_total
+                        if total_delta > 0:
+                            cpu_usage = 100.0 * (1.0 - idle_delta / total_delta)
+                    self._prev_cpu = (idle, total)
+        except Exception:
+            pass
+
+        # Fallback for CPU usage
+        if cpu_usage is None:
+            try:
+                load1, _, _ = os.getloadavg()
+                cpu_count = os.cpu_count() or 1
+                cpu_usage = min(100.0, (load1 / cpu_count) * 100.0)
+            except Exception:
+                cpu_usage = 0.0
+
+        # 2. Physical Memory Usage (%)
+        try:
+            if os.path.exists("/proc/meminfo"):
+                mem_data = {}
+                with open("/proc/meminfo", "r") as f:
+                    for line in f:
+                        parts = line.split(":")
+                        if len(parts) == 2:
+                            k = parts[0].strip()
+                            v = parts[1].strip().split()[0]
+                            mem_data[k] = float(v)
+                total_mem = mem_data.get("MemTotal", 1.0)
+                free_mem = mem_data.get("MemFree", 0.0)
+                buffers = mem_data.get("Buffers", 0.0)
+                cached = mem_data.get("Cached", 0.0)
+                sreclaimable = mem_data.get("SReclaimable", 0.0)
+                
+                # Physical RAM used directly by applications (excluding filesystem cache/buffers)
+                used_physical = total_mem - free_mem - buffers - cached - sreclaimable
+                mem_usage = 100.0 * (used_physical / total_mem)
+        except Exception:
+            pass
+
+        if mem_usage is None:
+            mem_usage = 0.0
+
+        # 3. CPU Temperature (°C)
+        try:
+            # Scan thermal zone files on Linux
+            thermal_dirs = ["/sys/class/thermal/thermal_zone0/temp", "/sys/class/hwmon/hwmon0/temp1_input", "/sys/class/hwmon/hwmon1/temp1_input"]
+            for t_path in thermal_dirs:
+                if os.path.exists(t_path):
+                    with open(t_path, "r") as f:
+                        val = float(f.read().strip())
+                        if val > 1000:
+                            val /= 1000.0
+                        if 0 <= val <= 120:
+                            temp_val = val
+                            break
+        except Exception:
+            pass
+
+        if temp_val is None:
+            temp_val = 45.0 # Fallback baseline temp if no sensor file accessible
+
+        return {
+            "pc_name": "LOCALHOST",
+            "cpu_usage": round(cpu_usage, 1),
+            "ram_usage": round(mem_usage, 1),
+            "cpu_temp": round(temp_val, 1)
+        }
 
     def run_pc_monitor_daemon(self):
         """
-        Daemon thread task updating any mapped pc_monitor widgets every 5 seconds,
-        rotating between CPU, GPU, RAM, and Disk metrics.
+        Daemon thread task updating pc_monitor widgets periodically based on per-button configs.
+        Renders 3 progress bars: CPU %, MEM %, and TEMP °C.
         """
-        logging.info("StreamDeckApp: Background PC Monitor Carousel Daemon started.")
-        carousel_index = 0
+        logging.info("StreamDeckApp: Background PC Monitor Daemon (3-bar mode) started.")
+        last_button_update = {} # button_index -> timestamp
+        
         while self.running:
             try:
                 now = time.time()
-                is_online = (now - self.pc_stats_last_update) <= 15.0 and bool(self.pc_stats)
-
                 for index in self.pc_monitor_buttons:
                     config = self.buttons_config.get(index)
                     if not config:
                         continue
-                    
-                    if not is_online:
-                        pc_name = self.pc_stats.get("pc_name", config.get("label", "PC Monitor")) if self.pc_stats else config.get("label", "PC Monitor")
+
+                    btn_ip = config.get("ip", self.pc_monitor_ip).strip()
+                    btn_port = int(config.get("port", self.pc_monitor_port))
+                    btn_interval = int(config.get("sync_interval", self.pc_sync_interval))
+                    label = config.get("label", "Monitor")
+
+                    # Check if it's time to update this specific button
+                    last_upd = last_button_update.get(index, 0)
+                    if (now - last_upd) < btn_interval:
+                        continue
+
+                    last_button_update[index] = now
+
+                    if btn_ip.lower() in ("localhost", "127.0.0.1", "::1"):
+                        # Host server local monitoring
+                        stats = self.get_local_server_stats()
                         self.deck_mgr.update_button(
                             index=index,
-                            label=pc_name,
+                            label=label,
                             device_type="widget",
-                            is_on=False,
-                            reachable=False,
-                            text_override="OFFLINE",
-                            icon_path="pc_monitor"
+                            is_on=True,
+                            reachable=True,
+                            text_override="",
+                            cpu_pct=stats["cpu_usage"],
+                            mem_pct=stats["ram_usage"],
+                            temp_val=stats["cpu_temp"]
                         )
                     else:
-                        pc_name = self.pc_stats.get("pc_name", "DESKTOP")
-                        if carousel_index == 0:
-                            usage = self.pc_stats.get("cpu_usage", 0.0)
-                            temp = self.pc_stats.get("cpu_temp")
-                            temp_str = f" ({int(temp)}°)" if temp is not None else ""
-                            status_text = f"CPU: {int(usage)}%{temp_str}"
+                        # Remote PC monitoring by (ip, port)
+                        dev_stats = self.device_stats.get((btn_ip, btn_port))
+                        dev_last = self.device_last_update.get((btn_ip, btn_port), 0)
+                        is_online = (now - dev_last) <= (btn_interval * 3) and bool(dev_stats)
+
+                        if not is_online:
                             self.deck_mgr.update_button(
                                 index=index,
-                                label=pc_name,
+                                label=label,
                                 device_type="widget",
-                                is_on=True,
-                                icon_path="cpu",
-                                text_override=status_text
+                                is_on=False,
+                                reachable=False,
+                                text_override="OFFLINE",
+                                icon_path="pc_monitor"
                             )
-                        elif carousel_index == 1:
-                            usage = self.pc_stats.get("gpu_usage", 0.0)
-                            temp = self.pc_stats.get("gpu_temp")
-                            temp_str = f" ({int(temp)}°)" if temp is not None else ""
-                            status_text = f"GPU: {int(usage)}%{temp_str}"
+                        else:
+                            action_type = config.get("action_type")
+                            monitor_type = config.get("monitor_type")
+
+                            is_gpu_widget = (action_type == "gpu_monitor" or monitor_type == "gpu")
+
+                            if is_gpu_widget:
+                                cpu_pct = dev_stats.get("gpu_usage", 0.0)
+                                mem_pct = dev_stats.get("gpu_vram", 0.0)
+                                temp_val = dev_stats.get("gpu_temp")
+                                col_labels = ("GPU", "RAM", "TMP")
+                            else:
+                                cpu_pct = dev_stats.get("cpu_usage", 0.0)
+                                mem_pct = dev_stats.get("ram_usage", 0.0)
+                                temp_val = dev_stats.get("cpu_temp")
+                                col_labels = ("CPU", "MEM", "TMP")
+
+                            # Check if button specifies a custom temp_sensor keyword override
+                            custom_temp = config.get("temp_sensor")
+                            if custom_temp and "tree" in dev_stats:
+                                custom_val = self.parse_lhm_value(
+                                    self.find_sensor_by_path(dev_stats["tree"], [custom_temp]) or
+                                    self.find_sensor_by_path(dev_stats["tree"], ["temperatures", custom_temp])
+                                )
+                                if custom_val is not None:
+                                    temp_val = custom_val
+
                             self.deck_mgr.update_button(
                                 index=index,
-                                label=pc_name,
+                                label=label,
                                 device_type="widget",
                                 is_on=True,
-                                icon_path="gpu",
-                                text_override=status_text
-                            )
-                        elif carousel_index == 2:
-                            usage = self.pc_stats.get("ram_usage", 0.0)
-                            status_text = f"RAM: {int(usage)}%"
-                            self.deck_mgr.update_button(
-                                index=index,
-                                label=pc_name,
-                                device_type="widget",
-                                is_on=True,
-                                icon_path="ram",
-                                text_override=status_text
-                            )
-                        elif carousel_index == 3:
-                            usage = self.pc_stats.get("disk_usage", 0.0)
-                            status_text = f"Disk: {int(usage)}%"
-                            self.deck_mgr.update_button(
-                                index=index,
-                                label=pc_name,
-                                device_type="widget",
-                                is_on=True,
-                                icon_path="disk",
-                                text_override=status_text
+                                reachable=True,
+                                text_override="",
+                                cpu_pct=cpu_pct,
+                                mem_pct=mem_pct,
+                                temp_val=temp_val,
+                                col_labels=col_labels
                             )
 
-                carousel_index = (carousel_index + 1) % 4
-                time.sleep(5)
+                time.sleep(1)
             except Exception as e:
                 logging.error(f"StreamDeckApp: Error in PC Monitor Daemon: {e}")
-                time.sleep(5)
+                time.sleep(2)
 
     def reset_activity_timer(self):
         """

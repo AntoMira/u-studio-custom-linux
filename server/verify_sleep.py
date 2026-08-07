@@ -23,6 +23,8 @@ app = StreamDeckApp()
 app.screen_sleep_timeout = 2
 app.screen_sleep_start = ""
 app.screen_sleep_end = ""
+app.keep_screen_on_pc_monitor = []
+app.keep_screen_on_hue_ids = []
 app.last_activity_time = time.time()
 
 print("[TEST] Screen is currently ON:", app.deck_mgr.screen_on)
@@ -48,6 +50,24 @@ print("[TEST] Verifying that the wake-up button press was intercepted and NOT ex
 inactivity_seconds = time.time() - app.last_activity_time
 print(f"[TEST] Inactivity duration after wake-up: {inactivity_seconds:.2f} seconds")
 assert inactivity_seconds < 1.0, "Activity timer should have been reset on wake-up"
+
+print("[TEST] Verifying keep_screen_on_hue_ids override...")
+# Set Hue light 2 ON in HueController simulation mock state
+app.hue._mock_states["2"] = {"on": True, "reachable": True}
+app.keep_screen_on_hue_ids = ["2"]
+app.last_activity_time = time.time() - 10.0 # Idle for 10s (timeout is 2s)
+app.check_screen_sleep()
+print("[TEST] Screen state with Hue light 2 ON:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is True, "Screen should stay ON when Hue light 2 is ON"
+
+print("[TEST] Verifying keep_screen_on_pc_monitor override...")
+app.hue._mock_states["2"] = {"on": False, "reachable": True}
+app.keep_screen_on_pc_monitor = ["192.168.31.101"]
+app.device_last_update[("192.168.31.101", 8085)] = time.time() # Received LHM telemetry right now
+app.last_activity_time = time.time() - 10.0 # Idle for 10s
+app.check_screen_sleep()
+print("[TEST] Screen state with PC 192.168.31.101 online:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is True, "Screen should stay ON when PC 192.168.31.101 is online"
 
 print("============================================================")
 print("🎉 ALL SCREEN SLEEP & WAKE VERIFICATION CHECKS PASSED!")

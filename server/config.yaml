@@ -42,6 +42,15 @@
 # screen_sleep_timeout:
 #   Inactivity duration in seconds before turning off screen backlight automatically.
 #   Value: Positive integer (default: 300 for 5 minutes), or 0 to disable inactivity sleep.
+#
+# keep_screen_on_pc_monitor:
+#   PC IP address (e.g., "192.168.31.101" or "localhost") to monitor. While online/active, keeps screen awake.
+#   Value: String or comma-separated IPs, or "" to disable.
+#
+# keep_screen_on_hue_ids:
+#   Comma-separated list of Philips Hue light/device IDs (e.g., "2, 5, 6").
+#   If ANY light in this list is turned ON, the screen remains awake even during sleep schedule.
+#   Value: String or comma-separated IDs, or "" to disable.
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
@@ -53,6 +62,8 @@ state_sync_interval: 5  # Polling interval in seconds to sync device states from
 screen_sleep_start: "23:59"   # Start of screen sleep window (default: "22:00")
 screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
+keep_screen_on_pc_monitor: "192.168.31.101"  # PC IP to keep screen awake while online
+keep_screen_on_hue_ids: "2, 5, 6"               # Philips Hue Light IDs to keep screen awake while ON
 
 # ==============================================================================
 # BUTTON MAPPINGS

@@ -88,10 +88,44 @@ OPENWEATHER_API_KEY=your_openweather_api_key
 OPENWEATHER_CITY=Sao Paulo,BR
 ```
 
-#### How to get an OpenWeather API Key:
-1. Register a free account at **[OpenWeatherMap](https://home.openweathermap.org/users/sign_up)**.
-2. Go to **API Keys** in your user dashboard and copy your default API key (or generate a new one).
-3. Set `OPENWEATHER_API_KEY` in `server/.env` and specify your location in `OPENWEATHER_CITY` (e.g., `Sao Paulo,BR`, `Lisbon,PT`, or `New York,US`).
+---
+
+## 🌙 Smart Screen Auto-Sleep & Display Awake Overrides
+
+The Stream Deck includes an intelligent, power-saving screen management engine that balances display longevity with 24/7 accessibility.
+
+### 1. How Auto-Sleep Works
+Screen backlight sleep can be triggered in two ways:
+* **Scheduled Sleep Window (`screen_sleep_start` & `screen_sleep_end`)**: Automatically dims the screen backlight to `0%` during your specified night hours (e.g. `"23:59"` to `"07:00"`).
+* **Inactivity Timeout (`screen_sleep_timeout`)**: Turns off the screen backlight after a specified period of no physical key presses (default: `300` seconds / 5 minutes). Set to `0` to disable inactivity sleep completely.
+
+### 2. Touch-to-Wake Gesture Interception
+When the screen is sleeping (`0%` backlight), touching **any physical key** on the Stream Deck immediately wakes up the display to `80%` brightness. 
+
+*To prevent accidental toggles at night*, the initial keypress that wakes up the screen is **intercepted and discarded**—it will not trigger light toggles or actions. Subsequent presses will execute actions normally.
+
+### 3. Smart Display Awake Overrides (`config.yaml`)
+You can configure smart conditions to keep the Stream Deck screen **awake and fully lit** even during scheduled sleep hours or inactivity timeouts:
+
+```yaml
+# 1. Scheduled Night Sleep Window (set to "" to disable)
+screen_sleep_start: "23:59"
+screen_sleep_end: "07:00"
+
+# 2. Inactivity Sleep Timeout in seconds (set to 0 to disable)
+screen_sleep_timeout: 300
+
+# 3. PC Monitor Override: Keep screen awake while target PC IP is ONLINE & transmitting telemetry
+keep_screen_on_pc_monitor: "192.168.31.101"   # Supports single IP, "localhost", or comma-separated list "192.168.31.101, localhost"
+
+# 4. Philips Hue Light/Plug Override: Keep screen awake while ANY of the listed device IDs are turned ON
+keep_screen_on_hue_ids: "2, 5, 6"             # Comma-separated list of Hue Light/Plug IDs
+```
+
+#### How the Overrides Work:
+- **Active PC Gaming / Workstation**: While your PC (`192.168.31.101`) is powered on and sending telemetry data (via LibreHardwareMonitor), the Stream Deck detects active telemetry and prevents the screen from going to sleep.
+- **Active Room Lighting**: While any of your selected Philips Hue devices (e.g. Desk Lamp `2` or Monitor Plug `6`) are turned `ON`, the Stream Deck assumes you are in the room and keeps the display illuminated.
+- **Automatic Resume**: As soon as the PC is shut down and all specified lights are turned `OFF`, the Stream Deck automatically resumes its sleep schedule.
 
 ---
 

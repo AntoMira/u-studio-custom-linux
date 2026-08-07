@@ -1,11 +1,10 @@
-# Tarefas: Widget Dedicado de GPU (`gpu_monitor`)
+# Tarefas: Prevenção de Auto-Sleep por Status de PC e Lâmpadas Hue
 
-- [x] **1. Expandir Extração de Métricas de GPU em `main.py`** <!-- id: 0 -->
-    - Extrair `gpu_usage`, `gpu_vram` e `gpu_temp` do payload do LibreHardwareMonitor
-- [x] **2. Suportar `action_type: gpu_monitor` em `main.py` e `deck_manager.py`** <!-- id: 1 -->
-    - Permitir passar rótulos de colunas customizados (`GPU`, `RAM`, `TMP`) para o botão
-- [x] **3. Adicionar Botão de GPU em `config.yaml`** <!-- id: 2 -->
-    - Mapear um botão dedicado (`index: 7`) para a GPU ("RTX 5080")
-- [x] **4. Testar e Validar** <!-- id: 3 -->
-    - Executar `python3 server/verify.py`
-    - Inspecionar `output_sim/button_7.png`
+- [x] **1. Adicionar `keep_screen_on_pc_monitor` e `keep_screen_on_hue_ids` ao `config.yaml`** <!-- id: 0 -->
+    - Adicionar chaves e comentários documentando a sintaxe
+- [x] **2. Carregar Novas Chaves em `load_config()` em `main.py`** <!-- id: 1 -->
+    - Tratar listas ou strings separadas por vírgula para os IDs de lâmpadas e IPs de PC
+- [x] **3. Atualizar `check_screen_sleep()` em `main.py`** <!-- id: 2 -->
+    - Prevenir o desligamento do display caso algum PC monitorado esteja online ou alguma lâmpada Hue listada esteja ligada
+- [x] **4. Testar via `verify.py` e Validar** <!-- id: 3 -->
+    - Executar a suíte automatizada (`verify_sleep.py`)

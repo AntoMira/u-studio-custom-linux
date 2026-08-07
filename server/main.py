@@ -139,6 +139,23 @@ class StreamDeckApp:
             self.pc_monitor_port = int(config_data.get("pc_monitor_port", 8085))
             self.pc_sync_interval = int(config_data.get("pc_sync_interval", 60))
             
+            # Keep screen awake settings
+            raw_pc_keep = config_data.get("keep_screen_on_pc_monitor", "")
+            if isinstance(raw_pc_keep, list):
+                self.keep_screen_on_pc_monitor = [str(x).strip().lower() for x in raw_pc_keep if x]
+            elif isinstance(raw_pc_keep, str):
+                self.keep_screen_on_pc_monitor = [x.strip().lower() for x in raw_pc_keep.split(",") if x.strip()]
+            else:
+                self.keep_screen_on_pc_monitor = []
+
+            raw_hue_keep = config_data.get("keep_screen_on_hue_ids", "")
+            if isinstance(raw_hue_keep, list):
+                self.keep_screen_on_hue_ids = [str(x).strip() for x in raw_hue_keep if x]
+            elif isinstance(raw_hue_keep, str):
+                self.keep_screen_on_hue_ids = [x.strip() for x in raw_hue_keep.split(",") if x.strip()]
+            else:
+                self.keep_screen_on_hue_ids = []
+            
             buttons_list = config_data.get("buttons", [])
             for btn in buttons_list:
                 index = btn.get("index")
@@ -902,10 +919,36 @@ class StreamDeckApp:
         inactivity_seconds = now - self.last_activity_time
         in_sleep_window = self.is_within_sleep_window()
 
-        # Determine if the screen should be off
-        should_sleep = False
+        # Check override conditions to keep screen awake:
+        # 1. Any configured PC endpoint in keep_screen_on_pc_monitor is online/transmitting
+        pc_override_active = False
+        if hasattr(self, "keep_screen_on_pc_monitor") and self.keep_screen_on_pc_monitor:
+            for ip_port, last_t in self.device_last_update.items():
+                target_ip = ip_port[0].lower()
+                if target_ip in self.keep_screen_on_pc_monitor:
+                    # Target PC received telemetry in the last 30s
+                    if (now - last_t) <= 30.0:
+                        pc_override_active = True
+                        break
 
-        if self.screen_sleep_timeout > 0:
+        # 2. Any Philips Hue light ID in keep_screen_on_hue_ids is turned ON
+        hue_override_active = False
+        if hasattr(self, "keep_screen_on_hue_ids") and self.keep_screen_on_hue_ids:
+            all_devs = self.hue.list_devices()
+            if all_devs:
+                for target_id in self.keep_screen_on_hue_ids:
+                    dev_data = all_devs.get(target_id)
+                    if dev_data:
+                        state = dev_data.get("state", dev_data)
+                        if state.get("on", False):
+                            hue_override_active = True
+                            break
+
+        keep_awake_override = (pc_override_active or hue_override_active)
+
+        if keep_awake_override:
+            should_sleep = False
+        elif self.screen_sleep_timeout > 0:
             has_window = bool(self.screen_sleep_start and self.screen_sleep_end)
             if has_window:
                 if in_sleep_window and inactivity_seconds >= self.screen_sleep_timeout:

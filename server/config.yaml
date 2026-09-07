@@ -146,7 +146,7 @@ buttons:
   - index: 5
     device_type: "widget"
     action_type: "pc_monitor"
-    label: "Servidor"
+    label: "Zee Home"
     mode: "pull"
     ip: "localhost"
     port: 8085

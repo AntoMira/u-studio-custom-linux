@@ -957,6 +957,10 @@ class StreamDeckApp:
             else:
                 if inactivity_seconds >= self.screen_sleep_timeout:
                     should_sleep = True
+        else:
+            has_window = bool(self.screen_sleep_start and self.screen_sleep_end)
+            if has_window and in_sleep_window:
+                should_sleep = True
 
         # 2. Apply state transitions
         if should_sleep:
@@ -968,7 +972,11 @@ class StreamDeckApp:
             # If the screen should be ON but is currently OFF:
             if not self.deck_mgr.screen_on:
                 has_window = bool(self.screen_sleep_start and self.screen_sleep_end)
-                if has_window and not in_sleep_window:
+                if keep_awake_override:
+                    logging.info("StreamDeckApp: Keep-awake item active. Turning screen ON.")
+                    self.deck_mgr.screen_on = True
+                    self.deck_mgr.set_screen_brightness(80)
+                elif has_window and not in_sleep_window:
                     logging.info("StreamDeckApp: Outside sleep window. Ensuring screen is ON.")
                     self.deck_mgr.screen_on = True
                     self.deck_mgr.set_screen_brightness(80)

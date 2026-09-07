@@ -6,6 +6,7 @@ import fcntl
 # Monkey-patch fcntl.flock to bypass active systemd service single instance lock
 fcntl.flock = lambda fd, op: None
 
+from datetime import datetime
 from main import StreamDeckApp
 
 # Configure logging to see all messages clearly
@@ -72,13 +73,64 @@ assert app.deck_mgr.screen_on is True, "Screen should stay ON when PC 192.168.31
 print("[TEST] Verifying daytime recovery outside sleep window when screen was OFF...")
 app.hue._mock_states["2"] = {"on": False, "reachable": True}
 app.device_last_update.clear()
-app.screen_sleep_start = "23:59"
-app.screen_sleep_end = "07:00"
+curr_hour = datetime.now(app.timezone).hour
+if curr_hour + 6 < 24:
+    app.screen_sleep_start = f"{curr_hour + 4:02d}:00"
+    app.screen_sleep_end = f"{curr_hour + 5:02d}:00"
+else:
+    app.screen_sleep_start = f"{curr_hour - 5:02d}:00"
+    app.screen_sleep_end = f"{curr_hour - 4:02d}:00"
 app.screen_sleep_timeout = 300
 app.deck_mgr.screen_on = False # Manually turn screen OFF
 app.check_screen_sleep()
 print("[TEST] Screen state outside sleep window:", app.deck_mgr.screen_on)
 assert app.deck_mgr.screen_on is True, "Screen should automatically be restored to ON outside sleep window"
+
+print("\n[TEST] Verifying wake during sleep window when Hue light turns ON...")
+app.screen_sleep_start = "00:00"
+app.screen_sleep_end = "23:59"
+app.screen_sleep_timeout = 300
+app.last_activity_time = time.time() - 500 # idle for 500s (> 300s)
+app.hue._mock_states["2"] = {"on": False, "reachable": True}
+app.device_last_update.clear()
+app.deck_mgr.screen_on = False # Screen is asleep in sleep window
+
+# Verify screen stays OFF when items are OFF
+app.check_screen_sleep()
+assert app.deck_mgr.screen_on is False, "Screen should remain OFF during sleep window when items are OFF"
+
+# Turn Hue light 2 ON while screen is asleep in sleep window
+print("[TEST] Turning Hue light 2 ON during sleep window...")
+app.hue._mock_states["2"] = {"on": True, "reachable": True}
+app.check_screen_sleep()
+print("[TEST] Screen state after turning Hue light ON:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is True, "Screen should turn ON automatically when Hue light turns ON during sleep window"
+
+# Turn Hue light 2 OFF -> screen should turn back OFF
+print("[TEST] Turning Hue light 2 OFF during sleep window...")
+app.hue._mock_states["2"] = {"on": False, "reachable": True}
+app.check_screen_sleep()
+print("[TEST] Screen state after turning Hue light OFF:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is False, "Screen should turn back OFF automatically when Hue light is turned OFF"
+
+print("\n[TEST] Verifying wake during sleep window when PC comes online...")
+app.deck_mgr.screen_on = False # Ensure screen is OFF
+app.last_activity_time = time.time() - 500
+app.device_last_update.clear()
+
+# PC comes online
+print("[TEST] PC 192.168.31.101 starts sending telemetry...")
+app.device_last_update[("192.168.31.101", 8085)] = time.time()
+app.check_screen_sleep()
+print("[TEST] Screen state after PC comes online:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is True, "Screen should turn ON automatically when PC comes online during sleep window"
+
+# PC goes offline (no updates in > 30s)
+print("[TEST] PC 192.168.31.101 stops sending telemetry (>30s ago)...")
+app.device_last_update[("192.168.31.101", 8085)] = time.time() - 40.0
+app.check_screen_sleep()
+print("[TEST] Screen state after PC goes offline:", app.deck_mgr.screen_on)
+assert app.deck_mgr.screen_on is False, "Screen should turn back OFF automatically when PC goes offline"
 
 print("============================================================")
 print("🎉 ALL SCREEN SLEEP & WAKE VERIFICATION CHECKS PASSED!")

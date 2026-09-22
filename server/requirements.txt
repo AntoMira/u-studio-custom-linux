@@ -4,3 +4,5 @@ strmdck==0.1.0rc1
 pillow>=9.0.0
 python-dotenv>=1.0.0
 deepdiff>=6.0.0
+paho-mqtt>=1.6.1
+

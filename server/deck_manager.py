@@ -244,7 +244,7 @@ class DeckManager:
 
         self._trigger_callbacks(button_index)
 
-    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None):
+    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
         * index: Button index (0 to 12)
@@ -360,17 +360,41 @@ class DeckManager:
         if not icon_drawn:
             center_x, center_y = width // 2, height // 2 - 10
             r = 30
+        # Render center text (large font, e.g. for temperature display) if provided
+        if center_text:
+            font_center = ImageFont.load_default(size=44)
+            c_text_w = draw.textlength(center_text, font=font_center)
+            stroke_w = 1 if (is_gradient or is_weather_solid) else 0
+            stroke_f = (0, 0, 0) if (is_gradient or is_weather_solid) else None
+            draw.text(((width - c_text_w) // 2, (height - 44) // 2 - 5), center_text, fill=fg_color, font=font_center, stroke_width=stroke_w, stroke_fill=stroke_f)
+
         # Fallback geometric shapes if no icon image was loaded
-        if not icon_drawn and (cpu_pct is None and mem_pct is None and temp_val is None):
+        if not icon_drawn and not center_text and (cpu_pct is None and mem_pct is None and temp_val is None):
             # Resolve the geometric shape to draw:
             # Check if icon_path is a known shape keyword, otherwise default to device_type
             shape_type = device_type
-            if icon_path in ("light", "plug", "ceiling", "lamp", "3dprinter", "clock", "pc_monitor", "cpu", "gpu", "ram", "disk"):
+            if icon_path in ("light", "plug", "ceiling", "lamp", "3dprinter", "clock", "pc_monitor", "cpu", "gpu", "ram", "disk", "thermometer"):
                 shape_type = icon_path
 
             center_x, center_y = width // 2, height // 2 - 10
             r = 30
-            if shape_type == "light":
+            if shape_type == "thermometer":
+                # High-contrast elegant thermometer drawing
+                # Outer tube outline
+                draw.rectangle([center_x - 6, center_y - 25, center_x + 6, center_y + 8], fill=None, outline=fg_color, width=2)
+                # Outer tube rounded top cap
+                draw.arc([center_x - 6, center_y - 30, center_x + 6, center_y - 20], start=180, end=360, fill=fg_color, width=2)
+                # Outer bulb circle at bottom
+                draw.ellipse([center_x - 12, center_y + 4, center_x + 12, center_y + 28], fill=None, outline=fg_color, width=2)
+                # Inner mercury bulb fill
+                draw.ellipse([center_x - 8, center_y + 8, center_x + 8, center_y + 24], fill=fg_color)
+                # Inner mercury column
+                draw.rectangle([center_x - 3, center_y - 12, center_x + 3, center_y + 12], fill=fg_color)
+                # Temperature tick marks on the right side of tube
+                draw.line([center_x + 9, center_y - 18, center_x + 14, center_y - 18], fill=fg_color, width=2)
+                draw.line([center_x + 9, center_y - 8, center_x + 15, center_y - 8], fill=fg_color, width=2)
+                draw.line([center_x + 9, center_y + 2, center_x + 14, center_y + 2], fill=fg_color, width=2)
+            elif shape_type == "light":
                 # Draw lightbulb outline/circle
                 draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=fg_color, width=3)
                 # Small filament

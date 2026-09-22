@@ -20,6 +20,7 @@ except ImportError:
 from hue_controller import HueController
 from deck_manager import DeckManager
 from weather_service import WeatherService
+from mqtt_service import MqttService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -79,6 +80,7 @@ class StreamDeckApp:
         self.pc_monitor_ip = ""
         self.pc_monitor_port = 8085
         self.pc_sync_interval = 60
+        self.mqtt_config = {}
         self.device_stats = {}      # Map (ip, port) -> telemetry dict
         self.device_last_update = {} # Map (ip, port) -> timestamp
         self.pc_monitor_buttons = []
@@ -95,6 +97,13 @@ class StreamDeckApp:
         self.weather_service = WeatherService(
             api_key=self.openweather_api_key,
             city=self.openweather_city
+        )
+        self.mqtt_service = MqttService(
+            broker=self.mqtt_config.get("broker", ""),
+            port=self.mqtt_config.get("port", 1883),
+            username=self.mqtt_config.get("username", ""),
+            password=self.mqtt_config.get("password", ""),
+            enabled=self.mqtt_config.get("enabled", True)
         )
         self.deck_mgr = DeckManager(
             simulator_mode=self.simulator_mode,
@@ -138,6 +147,7 @@ class StreamDeckApp:
             self.pc_monitor_ip = config_data.get("pc_monitor_ip", "localhost")
             self.pc_monitor_port = int(config_data.get("pc_monitor_port", 8085))
             self.pc_sync_interval = int(config_data.get("pc_sync_interval", 60))
+            self.mqtt_config = config_data.get("mqtt", {})
             
             # Keep screen awake settings
             raw_pc_keep = config_data.get("keep_screen_on_pc_monitor", "")
@@ -252,6 +262,39 @@ class StreamDeckApp:
                     weather_type=w_type,
                     min_temp=temp,
                     max_temp=None
+                )
+        elif device_type == "widget" and config.get("action_type") in ("tasmota_sensor", "mqtt_temp"):
+            topic = config.get("topic") or config.get("mqtt_topic")
+            data = self.mqtt_service.get_latest_data(topic) if topic else None
+            
+            if data and (data.get("temperature") is not None or data.get("humidity") is not None):
+                temp = data.get("temperature")
+                hum = data.get("humidity")
+                
+                temp_str = f"{temp:.1f}°C" if temp is not None else "--"
+                hum_str = f"{int(round(hum))}%" if hum is not None else ""
+                
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon if (icon and icon not in ("thermometer", "none")) else "none",
+                    center_text=temp_str,
+                    text_override=hum_str,
+                    min_temp=temp,
+                    max_temp=None
+                )
+            else:
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon if (icon and icon not in ("thermometer", "none")) else "none",
+                    center_text="--°C",
+                    text_override="WAITING...",
+                    min_temp=None
                 )
         elif device_type == "widget" and config.get("action_type") == "pc_monitor":
             self.deck_mgr.update_button(
@@ -390,7 +433,7 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
-                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1"):
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "tasmota_sensor", "mqtt_temp"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)
@@ -438,6 +481,17 @@ class StreamDeckApp:
         """
         # Register the button callback with DeckManager
         self.deck_mgr.register_callback(self.on_button_press)
+
+        # Register MQTT topics and start MQTT service
+        for index, config in self.buttons_config.items():
+            if config.get("device_type") == "widget" and config.get("action_type") in ("tasmota_sensor", "mqtt_temp"):
+                topic = config.get("topic") or config.get("mqtt_topic")
+                if topic:
+                    def make_cb(btn_idx):
+                        return lambda t, d: self.update_button_state(btn_idx)
+                    self.mqtt_service.register_topic(topic, make_cb(index))
+
+        self.mqtt_service.start()
 
         # Draw initial button states
         for index in self.buttons_config:

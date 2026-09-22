@@ -51,6 +51,9 @@ def test_config_parsing():
         if "sync_interval" in b:
             assert isinstance(b["sync_interval"], int) and b["sync_interval"] > 0, "Button sync_interval must be > 0"
 
+    assert "mqtt" in config, "Missing 'mqtt' section in config.yaml"
+    assert isinstance(config["mqtt"].get("port", 1883), int), "MQTT port must be an integer"
+
     print("✅ config.yaml safety validation passed successfully.")
 
 def test_hue_controller_simulation():
@@ -417,6 +420,50 @@ def test_lhm_telemetry_parsing():
     
     print("✅ LibreHardwareMonitor JSON search and parsing logic check passed.")
 
+def test_mqtt_and_tasmota_rendering():
+    """
+    Validates Tasmota MQTT payload parsing and thermometer widget image rendering.
+    """
+    print("Testing Tasmota MQTT payload parsing and thermometer widget rendering...")
+    from mqtt_service import parse_tasmota_payload
+
+    # 1. Test nested Tasmota AM2301 payload
+    payload1 = '{"Time":"2026-09-22T20:00:00","AM2301":{"Temperature":24.5,"Humidity":52.0},"TempUnit":"C"}'
+    res1 = parse_tasmota_payload(payload1)
+    assert res1["temperature"] == 24.5, f"Expected temperature 24.5, got {res1['temperature']}"
+    assert res1["humidity"] == 52.0, f"Expected humidity 52.0, got {res1['humidity']}"
+
+    # 2. Test flat JSON payload
+    payload2 = '{"Temperature": 19.8, "Humidity": 65.0}'
+    res2 = parse_tasmota_payload(payload2)
+    assert res2["temperature"] == 19.8, f"Expected temperature 19.8, got {res2['temperature']}"
+    assert res2["humidity"] == 65.0, f"Expected humidity 65.0, got {res2['humidity']}"
+
+    # 3. Test raw float payload fallback
+    payload3 = '22.3'
+    res3 = parse_tasmota_payload(payload3)
+    assert res3["temperature"] == 22.3, f"Expected temperature 22.3, got {res3['temperature']}"
+
+    # 4. Render temperature widget button image (large temp in center, humidity at bottom)
+    manager = DeckManager(simulator_mode=True)
+    manager.update_button(
+        index=8,
+        label="Quarto",
+        device_type="widget",
+        is_on=True,
+        icon_path="none",
+        center_text="24.5°C",
+        text_override="52%",
+        min_temp=24.5
+    )
+
+    out_path = os.path.join(manager.output_sim_dir, "button_8.png")
+    assert os.path.exists(out_path), f"Expected button_8.png at {out_path}"
+    img = Image.open(out_path)
+    assert img.size == (196, 196), f"Expected 196x196 image size, got {img.size}"
+
+    print("✅ Tasmota MQTT payload parsing and central temperature widget rendering checks passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -432,6 +479,8 @@ def run_tests():
         test_weather_service()
         print("-"*60)
         test_lhm_telemetry_parsing()
+        print("-"*60)
+        test_mqtt_and_tasmota_rendering()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

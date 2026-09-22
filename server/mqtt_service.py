@@ -16,13 +16,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 def parse_tasmota_payload(payload_str: str) -> Dict[str, Any]:
     """
-    Parses Tasmota MQTT telemetry JSON string and extracts temperature and humidity.
-    Supports common Tasmota sensor sub-keys (e.g. AM2301, DHT11, BME280, SHT3X, DS18B20, etc.)
+    Parses Tasmota MQTT telemetry JSON string and extracts temperature, humidity, power, and current.
+    Supports common Tasmota sensor sub-keys (e.g. AM2301, DHT11, ENERGY, etc.)
     or flat JSON structures.
     """
     result = {
         "temperature": None,
         "humidity": None,
+        "power": None,
+        "current": None,
         "raw": None
     }
     
@@ -48,10 +50,14 @@ def parse_tasmota_payload(payload_str: str) -> Dict[str, Any]:
 
     temp_keys = {"temperature", "temp", "temp_c", "temp_celsius"}
     hum_keys = {"humidity", "hum", "humidity_pct"}
+    power_keys = {"power", "activepower", "active_power", "watts", "watt"}
+    current_keys = {"current", "amperes", "ampere", "amps", "amp"}
 
     def extract_from_dict(d: dict):
         temp_val = None
         hum_val = None
+        power_val = None
+        current_val = None
 
         for k, v in d.items():
             k_lower = str(k).lower()
@@ -59,19 +65,29 @@ def parse_tasmota_payload(payload_str: str) -> Dict[str, Any]:
                 temp_val = float(v)
             elif k_lower in hum_keys and isinstance(v, (int, float)):
                 hum_val = float(v)
+            elif k_lower in power_keys and isinstance(v, (int, float)):
+                power_val = float(v)
+            elif k_lower in current_keys and isinstance(v, (int, float)):
+                current_val = float(v)
             elif isinstance(v, dict):
-                # Search sub-dictionaries (e.g., d["AM2301"])
-                sub_t, sub_h = extract_from_dict(v)
+                # Search sub-dictionaries (e.g., d["AM2301"] or d["ENERGY"])
+                sub_t, sub_h, sub_p, sub_c = extract_from_dict(v)
                 if sub_t is not None and temp_val is None:
                     temp_val = sub_t
                 if sub_h is not None and hum_val is None:
                     hum_val = sub_h
+                if sub_p is not None and power_val is None:
+                    power_val = sub_p
+                if sub_c is not None and current_val is None:
+                    current_val = sub_c
 
-        return temp_val, hum_val
+        return temp_val, hum_val, power_val, current_val
 
-    t, h = extract_from_dict(data)
+    t, h, p, c = extract_from_dict(data)
     result["temperature"] = t
     result["humidity"] = h
+    result["power"] = p
+    result["current"] = c
 
     return result
 

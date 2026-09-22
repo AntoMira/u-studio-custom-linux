@@ -296,6 +296,48 @@ class StreamDeckApp:
                     text_override="WAITING...",
                     min_temp=None
                 )
+        elif device_type == "widget" and config.get("action_type") in ("tasmota_power", "mqtt_power"):
+            topic = config.get("topic") or config.get("mqtt_topic")
+            max_power = float(config.get("max_power", 1000.0))
+            data = self.mqtt_service.get_latest_data(topic) if topic else None
+            
+            if data and (data.get("power") is not None or data.get("current") is not None):
+                power = data.get("power")
+                curr = data.get("current")
+                
+                if power is not None:
+                    if power >= 1000:
+                        power_str = f"{power / 1000.0:.2f} kW"
+                    else:
+                        power_str = f"{int(round(power))} W"
+                else:
+                    power_str = "-- W"
+                    
+                curr_str = f"{curr:.2f}A" if curr is not None else ""
+                
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon if (icon and icon not in ("plug", "none")) else "none",
+                    center_text=power_str,
+                    text_override=curr_str,
+                    power_val=power,
+                    max_power=max_power,
+                    reachable=True
+                )
+            else:
+                self.deck_mgr.update_button(
+                    index=index,
+                    label=label,
+                    device_type="widget",
+                    is_on=True,
+                    icon_path=icon if (icon and icon not in ("plug", "none")) else "none",
+                    center_text="-- W",
+                    text_override="WAITING...",
+                    max_power=max_power
+                )
         elif device_type == "widget" and config.get("action_type") == "pc_monitor":
             self.deck_mgr.update_button(
                 index=index,
@@ -433,7 +475,7 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
-                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "tasmota_sensor", "mqtt_temp"):
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)
@@ -484,7 +526,7 @@ class StreamDeckApp:
 
         # Register MQTT topics and start MQTT service
         for index, config in self.buttons_config.items():
-            if config.get("device_type") == "widget" and config.get("action_type") in ("tasmota_sensor", "mqtt_temp"):
+            if config.get("device_type") == "widget" and config.get("action_type") in ("tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
                 topic = config.get("topic") or config.get("mqtt_topic")
                 if topic:
                     def make_cb(btn_idx):

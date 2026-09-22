@@ -101,9 +101,13 @@ mqtt:
 #       - "weather_forecast"   : Display today's weather forecast (min/max temperature)
 #       - "weather_forecast+1" : Display tomorrow's weather forecast (min/max temperature)
 #       - "tasmota_sensor" : Display temperature and humidity from a Tasmota MQTT telemetry topic
+#       - "tasmota_power"  : Display power consumption (Watts/kW) and current (Amperes) from a Tasmota smart plug via MQTT
 #
 # - topic:
-#     MQTT telemetry topic for tasmota_sensor widget (e.g. "tele/tasmota_quarto/SENSOR")
+#     MQTT telemetry topic for tasmota_sensor / tasmota_power widget (e.g. "tele/sala/SENSOR")
+#
+# - max_power:
+#     Maximum power scale in Watts for tasmota_power left vertical progress bar (default: 1000)
 #
 # - target:
 #     The unique ID of the target device on the local Philips Hue Bridge.
@@ -187,6 +191,14 @@ buttons:
     port: 8085
     sync_interval: 15
     icon: "gpu"
+
+  - index: 8
+    device_type: "widget"
+    action_type: "tasmota_power"
+    label: "Tomada"
+    topic: "tele/net/SENSOR"
+    max_power: 2000
+    icon: "plug"
 
   - index: 9
     device_type: "widget"

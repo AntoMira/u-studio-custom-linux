@@ -444,11 +444,17 @@ def test_mqtt_and_tasmota_rendering():
     res3 = parse_tasmota_payload(payload3)
     assert res3["temperature"] == 22.3, f"Expected temperature 22.3, got {res3['temperature']}"
 
-    # 4. Render temperature widget button image (large temp in center, humidity at bottom)
+    # 4. Test Tasmota ENERGY telemetry payload
+    payload4 = '{"Time":"2026-09-22T20:25:00","ENERGY":{"Total":12.3,"Power":150,"Voltage":220,"Current":0.68}}'
+    res4 = parse_tasmota_payload(payload4)
+    assert res4["power"] == 150.0, f"Expected power 150.0, got {res4['power']}"
+    assert res4["current"] == 0.68, f"Expected current 0.68, got {res4['current']}"
+
+    # 5. Render temperature widget button image (large temp in center, humidity at bottom)
     manager = DeckManager(simulator_mode=True)
     manager.update_button(
-        index=8,
-        label="Quarto",
+        index=9,
+        label="Sala",
         device_type="widget",
         is_on=True,
         icon_path="none",
@@ -457,12 +463,26 @@ def test_mqtt_and_tasmota_rendering():
         min_temp=24.5
     )
 
+    # 6. Render tasmota_power widget button image (large power in center, current in amperes at bottom, left vertical power bar)
+    manager.update_button(
+        index=8,
+        label="Tomada",
+        device_type="widget",
+        is_on=True,
+        icon_path="none",
+        center_text="150 W",
+        text_override="0.68A",
+        power_val=150.0,
+        max_power=1000.0,
+        reachable=True
+    )
+
     out_path = os.path.join(manager.output_sim_dir, "button_8.png")
     assert os.path.exists(out_path), f"Expected button_8.png at {out_path}"
     img = Image.open(out_path)
     assert img.size == (196, 196), f"Expected 196x196 image size, got {img.size}"
 
-    print("✅ Tasmota MQTT payload parsing and central temperature widget rendering checks passed successfully.")
+    print("✅ Tasmota MQTT payload parsing (temp, humidity, power, current) and widget rendering checks passed successfully.")
 
 def run_tests():
     print("="*60)

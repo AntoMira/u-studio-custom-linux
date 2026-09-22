@@ -1,29 +1,20 @@
-# Tarefas: Widget de Temperatura e Umidade Tasmota via MQTT
+# Tarefas: Barra Lateral de Consumo no Widget tasmota_power
 
 - [x] **1. Criar Plano de Implementação e Alinhar com o Usuário** <!-- id: 0 -->
-    - Definir estrutura do `config.yaml` para MQTT (host, porta, usuário, senha) e widget `tasmota_sensor` (tópico).
-    - Definir regras de parsing de payload Tasmota MQTT (temperatura e umidade).
-    - Definir renderização gráfica da temperatura (mesma escala de cores `get_color_for_temp`, container escuro arredondado, ícone de termômetro e texto `Temp°C | Hum%`).
-- [x] **2. Implementar Módulo de Serviço MQTT (`server/mqtt_service.py`)** <!-- id: 1 -->
-    - Suporte a `paho-mqtt` com autenticação e fallback gracioso se não instalado/desconectado.
-    - Loop de escuta/assinatura dos tópicos dos widgets configurados.
-    - Parser resiliente de JSON Tasmota (sub-chaves como `AM2301`, `DHT11`, `BME280`, `DS18B20`, `SHT3X` ou raízes `Temperature`/`Humidity`).
-- [x] **3. Atualizar Renderizador em `server/deck_manager.py`)** <!-- id: 2 -->
-    - Adicionar desenho geométrico do ícone de **Termômetro** (tubo, bulbo, mercúrio e marcações laterais).
-    - Aplicar cor de fundo sólida/gradiente `get_color_for_temp(temp)` e container translúcido para o widget Tasmota.
-- [x] **4. Atualizar Aplicação Principal em `server/main.py`)** <!-- id: 3 -->
-    - Carregar credenciais MQTT de `config.yaml`.
-    - Inicializar `MqttService` e registrar tópicos dos widgets.
-    - Atualizar estado dos botões ao receber atualizações de telemetria MQTT.
-- [x] **5. Adicionar Dependência e Atualizar `config.yaml`)** <!-- id: 4 -->
-    - Incluir `paho-mqtt` em `requirements.txt`.
-    - Exemplo de configuração de broker MQTT com autenticação e novo widget no `config.yaml`.
-- [x] **6. Criar e Executar Suíte de Testes/Verificação (`server/verify.py`)** <!-- id: 5 -->
-    - Validar parsing de configuração e payloads JSON Tasmota.
-    - Validar renderização de imagem do botão com escala de cores e ícone de termômetro.
+    - Definir posição e dimensões da barra vertical lateral esquerda no botão (ex: `x=16`, largura `12px`, altura `156px`).
+    - Definir interpolação de cor `get_scale_color(pct)` (0% Verde -> 50% Amarelo -> 100% Vermelho).
+    - Suporte ao parâmetro `max_power` no `config.yaml` (padrão: `1000`).
+- [x] **2. Atualizar Renderizador em `server/deck_manager.py`** <!-- id: 1 -->
+    - Adicionar renderização da barra vertical de energia na borda esquerda quando `power_val` for informado.
+- [x] **3. Atualizar Lógica em `server/main.py`** <!-- id: 2 -->
+    - Ler `max_power` da configuração do botão (padrão `1000.0`).
+    - Calcular a porcentagem de energia e repassar `power_val` e `max_power` para `update_button`.
+- [x] **4. Atualizar Configuração (`server/config.yaml`)** <!-- id: 3 -->
+    - Documentar `max_power` e incluir no exemplo do botão 8.
+- [x] **5. Atualizar Suíte de Verificação (`server/verify.py`)** <!-- id: 4 -->
+    - Adicionar teste de renderização da barra de potência lateral e validar geração da imagem.
 
 ## Resultados e Revisão
 - Todos os testes da suíte `server/verify.py` passaram com sucesso (100%).
-- `MqttService` criado em `server/mqtt_service.py` com suporte a autenticação, reconexão e parsing de JSON Tasmota (`AM2301`, `DHT11`, `BME280`, `DS18B20`, `SHT3X`, `SI7021`, etc.).
-- Desenho geométrico do ícone de termômetro implementado no `DeckManager`.
-- Botão simulado de teste (`button_8.png`) gerado com sucesso demonstrando fundo colorido pela temperatura (24.5°C -> Azul), container arredondado escuro, ícone de termômetro e status `24.5°C | 52%`.
+- Barra de progresso vertical adicionada na borda esquerda do widget `tasmota_power` utilizando a mesma graduação de cores dos widgets do PC (Verde -> Amarelo -> Vermelho).
+- Imagem simulada (`button_8.png`) gerada com sucesso demonstrando a barra lateral proporcional a `max_power`.

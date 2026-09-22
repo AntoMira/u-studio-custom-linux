@@ -39,6 +39,29 @@ def get_color_for_temp(temp: float) -> tuple:
             return (r, g, b)
     return (0, 0, 0)
 
+def get_scale_color(pct: float) -> tuple:
+    """
+    Smooth gradient color interpolation based on percentage (0% Green -> 50% Yellow -> 100% Red).
+    """
+    if pct is None:
+        return (100, 100, 100) # Gray fallback
+    p = min(100.0, max(0.0, float(pct))) / 100.0
+    green_color = (46, 213, 115)   # #2ed573 Bright Green
+    yellow_color = (255, 200, 0)   # #ffc800 Golden Yellow
+    red_color = (255, 40, 40)      # #ff2828 Vibrant Red
+
+    if p <= 0.5:
+        factor = p / 0.5
+        r = int(round(green_color[0] + (yellow_color[0] - green_color[0]) * factor))
+        g = int(round(green_color[1] + (yellow_color[1] - green_color[1]) * factor))
+        b = int(round(green_color[2] + (yellow_color[2] - green_color[2]) * factor))
+    else:
+        factor = (p - 0.5) / 0.5
+        r = int(round(yellow_color[0] + (red_color[0] - yellow_color[0]) * factor))
+        g = int(round(yellow_color[1] + (red_color[1] - yellow_color[1]) * factor))
+        b = int(round(yellow_color[2] + (red_color[2] - yellow_color[2]) * factor))
+    return (r, g, b)
+
 class DeckManager:
     """
     Manages communication with the Ulanzi D200 Stream Deck.
@@ -244,7 +267,7 @@ class DeckManager:
 
         self._trigger_callbacks(button_index)
 
-    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None):
+    def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None, power_val: float = None, max_power: float = 1000.0):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
         * index: Button index (0 to 12)
@@ -326,6 +349,26 @@ class DeckManager:
                 overlay_draw = ImageDraw.Draw(overlay)
                 overlay_draw.rectangle([12, 12, 184, 184], fill=(0, 0, 0, 100))
                 img.paste(overlay, (0, 0), overlay)
+
+        # Render left-side vertical power bar if power_val is provided
+        if power_val is not None:
+            max_p = max_power if (max_power and max_power > 0) else 1000.0
+            power_pct = min(100.0, max(0.0, (float(power_val) / float(max_p)) * 100.0))
+            
+            bar_x = 16
+            bar_w = 12
+            bar_top_y = 20
+            bar_height = 156
+            
+            # Dark background track
+            draw.rectangle([bar_x, bar_top_y, bar_x + bar_w, bar_top_y + bar_height], fill=(40, 40, 40))
+            
+            # Fill vertical bar from bottom-up using get_scale_color(power_pct)
+            fill_h = int((power_pct / 100.0) * bar_height)
+            if fill_h > 0:
+                bar_color = get_scale_color(power_pct)
+                fill_top_y = bar_top_y + bar_height - fill_h
+                draw.rectangle([bar_x, fill_top_y, bar_x + bar_w, bar_top_y + bar_height], fill=bar_color)
 
         # 3. Render base icon (or default geometric symbol)
         icon_drawn = False
@@ -556,29 +599,6 @@ class DeckManager:
 
         # Render 3 vertical progress bars (CPU, MEM, TEMP) side-by-side if metrics are provided
         if cpu_pct is not None or mem_pct is not None or temp_val is not None:
-            # Smooth gradient color interpolation based on percentage (0% Green -> 50% Yellow -> 100% Red)
-            def get_scale_color(pct: float):
-                if pct is None:
-                    return (100, 100, 100) # Gray fallback
-                p = min(100.0, max(0.0, float(pct))) / 100.0
-                green_color = (46, 213, 115)   # #2ed573 Bright Green
-                yellow_color = (255, 200, 0)   # #ffc800 Golden Yellow
-                red_color = (255, 40, 40)      # #ff2828 Vibrant Red
-
-                if p <= 0.5:
-                    # Interpolate from Green to Yellow
-                    factor = p / 0.5
-                    r = int(round(green_color[0] + (yellow_color[0] - green_color[0]) * factor))
-                    g = int(round(green_color[1] + (yellow_color[1] - green_color[1]) * factor))
-                    b = int(round(green_color[2] + (yellow_color[2] - green_color[2]) * factor))
-                else:
-                    # Interpolate from Yellow to Red
-                    factor = (p - 0.5) / 0.5
-                    r = int(round(yellow_color[0] + (red_color[0] - yellow_color[0]) * factor))
-                    g = int(round(yellow_color[1] + (red_color[1] - yellow_color[1]) * factor))
-                    b = int(round(yellow_color[2] + (red_color[2] - yellow_color[2]) * factor))
-                return (r, g, b)
-
             l1, l2, l3 = col_labels if (col_labels and len(col_labels) == 3) else ("CPU", "MEM", "TMP")
             columns_data = [
                 (l1, cpu_pct, False, "%"),

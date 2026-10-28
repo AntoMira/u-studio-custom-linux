@@ -67,7 +67,7 @@ class DeckManager:
     Manages communication with the Ulanzi D200 Stream Deck.
     Features a robust Simulator Mode that saves button screens as PNG images for visual verification.
     """
-    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0):
+    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35):
         self.simulator_mode = simulator_mode
         self.has_hardware = not self.simulator_mode
         self.deck = None
@@ -80,6 +80,8 @@ class DeckManager:
         self.margin_label = margin_label
         self.margin_status = margin_status
         self.small_window_mode = small_window_mode
+        self.debounce_seconds = float(debounce_seconds)
+        self.last_press_time = {}
         os.makedirs(self.cache_dir, exist_ok=True)
         self.screen_on = True
         self.wake_callback = None
@@ -232,27 +234,48 @@ class DeckManager:
     def _on_hardware_keypress(self, key_index: int, pressed: bool):
         """
         Internal handler for hardware button events.
-        Only triggers action on key release/press as configured.
+        Only triggers action on key press with debouncing.
         """
-        if pressed:
-            logging.info(f"DeckManager: Hardware Key Pressed: {key_index}")
-            if not self.screen_on:
-                self.screen_on = True
-                self.set_screen_brightness(80)
-                logging.info("DeckManager: Intercepted keypress to wake up the screen. Consumed press.")
-                if self.wake_callback:
-                    try:
-                        self.wake_callback()
-                    except Exception as e:
-                        logging.error(f"DeckManager: Error in wake callback: {e}")
-                return # Discard this keypress!
+        if not pressed:
+            return
 
-            self._trigger_callbacks(key_index)
+        now = time.time()
+        last_time = self.last_press_time.get(key_index, 0.0)
+        elapsed = now - last_time
+        if elapsed < self.debounce_seconds:
+            logging.info(f"DeckManager: Debounced keypress on button {key_index} ({elapsed:.3f}s < {self.debounce_seconds}s)")
+            return
 
-    def simulate_press(self, button_index: int):
+        self.last_press_time[key_index] = now
+        logging.info(f"DeckManager: Hardware Key Pressed: {key_index}")
+
+        if not self.screen_on:
+            self.screen_on = True
+            self.set_screen_brightness(80)
+            logging.info("DeckManager: Intercepted keypress to wake up the screen. Consumed press.")
+            if self.wake_callback:
+                try:
+                    self.wake_callback()
+                except Exception as e:
+                    logging.error(f"DeckManager: Error in wake callback: {e}")
+            return # Discard this keypress!
+
+        self._trigger_callbacks(key_index)
+
+    def simulate_press(self, button_index: int, force: bool = False) -> bool:
         """
         Triggered in Simulator Mode to emulate pressing a button.
+        Returns True if the press was processed, False if debounced or consumed by wake-up.
         """
+        if not force:
+            now = time.time()
+            last_time = self.last_press_time.get(button_index, 0.0)
+            elapsed = now - last_time
+            if elapsed < self.debounce_seconds:
+                logging.info(f"DeckManager (SIM): Debounced keypress on button {button_index} ({elapsed:.3f}s < {self.debounce_seconds}s)")
+                return False
+            self.last_press_time[button_index] = now
+
         logging.info(f"DeckManager (SIM): Emulating button press for index: {button_index}")
         if not self.screen_on:
             self.screen_on = True
@@ -263,9 +286,19 @@ class DeckManager:
                     self.wake_callback()
                 except Exception as e:
                     logging.error(f"DeckManager: Error in wake callback: {e}")
-            return # Discard simulated press!
+            return False # Discard simulated press!
 
         self._trigger_callbacks(button_index)
+        return True
+
+    def reset_debounce(self, button_index: int = None):
+        """
+        Resets the debounce timer for a specific button or all buttons.
+        """
+        if button_index is None:
+            self.last_press_time.clear()
+        else:
+            self.last_press_time.pop(button_index, None)
 
     def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None, power_val: float = None, max_power: float = 1000.0):
         """

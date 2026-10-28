@@ -51,6 +51,10 @@
 #   Comma-separated list of Philips Hue light/device IDs (e.g., "2, 5, 6").
 #   If ANY light in this list is turned ON, the screen remains awake even during sleep schedule.
 #   Value: String or comma-separated IDs, or "" to disable.
+#
+# button_debounce_seconds:
+#   Minimum time interval in seconds between consecutive presses of the same button to prevent double-clicks.
+#   Value: Positive float or integer (default: 0.35).
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
@@ -64,6 +68,7 @@ screen_sleep_end: "07:00"     # End of screen sleep window (default: "07:00")
 screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (default: 300)
 keep_screen_on_pc_monitor: "192.168.31.101"  # PC IP to keep screen awake while online
 keep_screen_on_hue_ids: "2, 5, 6"               # Philips Hue Light IDs to keep screen awake while ON
+button_debounce_seconds: 0.35                   # Debounce interval in seconds to prevent double clicks (default: 0.35)
 
 # ==============================================================================
 # MQTT BROKER SETTINGS

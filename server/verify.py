@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import yaml
 from PIL import Image
 
@@ -50,6 +51,10 @@ def test_config_parsing():
             assert isinstance(b["port"], int) and 1 <= b["port"] <= 65535, "Button port must be valid"
         if "sync_interval" in b:
             assert isinstance(b["sync_interval"], int) and b["sync_interval"] > 0, "Button sync_interval must be > 0"
+
+    assert "button_debounce_seconds" in config, "Missing 'button_debounce_seconds' root in config.yaml"
+    assert isinstance(config["button_debounce_seconds"], (int, float)), "button_debounce_seconds must be a number"
+    assert config["button_debounce_seconds"] > 0, "button_debounce_seconds must be positive"
 
     assert "mqtt" in config, "Missing 'mqtt' section in config.yaml"
     assert isinstance(config["mqtt"].get("port", 1883), int), "MQTT port must be an integer"
@@ -484,6 +489,92 @@ def test_mqtt_and_tasmota_rendering():
 
     print("✅ Tasmota MQTT payload parsing (temp, humidity, power, current) and widget rendering checks passed successfully.")
 
+def test_button_debounce():
+    """
+    Validates button debouncing logic on DeckManager:
+    - Rapid consecutive presses on the same button are dropped.
+    - Presses on different buttons are allowed independently.
+    - Presses after debounce duration expires are processed.
+    - Hardware key release (pressed=False) events do not trigger callbacks.
+    - Wake-up keypress does not trigger actions, and immediate chatter after wake-up is debounced.
+    """
+    print("Testing button debouncer logic on DeckManager...")
+    manager = DeckManager(simulator_mode=True, debounce_seconds=0.35)
+    
+    clicks = []
+    manager.register_callback(lambda idx: clicks.append(idx))
+
+    # 1. Initial simulated press on button 1
+    res1 = manager.simulate_press(1)
+    assert res1 is True, "First simulated press should succeed"
+    assert clicks == [1], f"Expected clicks to be [1], got {clicks}"
+
+    # 2. Immediate second press on button 1 (bounce / double click simulation)
+    res2 = manager.simulate_press(1)
+    assert res2 is False, "Immediate second press on the same button must be debounced"
+    assert clicks == [1], f"Clicks should still be [1], got {clicks}"
+
+    # 3. Immediate press on a DIFFERENT button (button 2) should NOT be blocked
+    res3 = manager.simulate_press(2)
+    assert res3 is True, "Press on a different button should not be blocked by debounce of another button"
+    assert clicks == [1, 2], f"Expected clicks to be [1, 2], got {clicks}"
+
+    # 4. Immediate second press on button 2 should be debounced
+    res4 = manager.simulate_press(2)
+    assert res4 is False, "Immediate second press on button 2 must be debounced"
+    assert clicks == [1, 2], f"Clicks should still be [1, 2], got {clicks}"
+
+    # 5. Subsequent press on button 1 after elapsed debounce time
+    manager.last_press_time[1] = time.time() - 0.5  # Simulate 500ms elapsed
+    res5 = manager.simulate_press(1)
+    assert res5 is True, "Press on button 1 after debounce window should succeed"
+    assert clicks == [1, 2, 1], f"Expected clicks to be [1, 2, 1], got {clicks}"
+
+    # 6. Force press bypasses debounce check
+    res6 = manager.simulate_press(1, force=True)
+    assert res6 is True, "Forced press should bypass debounce check"
+    assert clicks == [1, 2, 1, 1], f"Expected clicks to be [1, 2, 1, 1], got {clicks}"
+
+    # 7. Hardware keypress handler tests
+    manager.reset_debounce()
+    clicks.clear()
+
+    # Key release should be ignored completely
+    manager._on_hardware_keypress(3, pressed=False)
+    assert len(clicks) == 0, "Key release (pressed=False) should not trigger any callback"
+
+    # Hardware key press down
+    manager._on_hardware_keypress(3, pressed=True)
+    assert clicks == [3], f"Expected [3], got {clicks}"
+
+    # Immediate hardware chatter on key 3
+    manager._on_hardware_keypress(3, pressed=True)
+    assert clicks == [3], f"Immediate hardware key chatter should be debounced, got {clicks}"
+
+    # 8. Wake-up contact chatter protection
+    wake_calls = []
+    manager.register_wake_callback(lambda: wake_calls.append(True))
+    manager.screen_on = False
+    manager.reset_debounce()
+    clicks.clear()
+
+    # Button press while screen is asleep -> should wake screen, NOT fire button callback
+    manager._on_hardware_keypress(5, pressed=True)
+    assert manager.screen_on is True, "Screen should be woken up"
+    assert len(wake_calls) == 1, "Wake callback should be called"
+    assert len(clicks) == 0, "Button action should NOT be executed when waking screen"
+
+    # Contact chatter 50ms later while screen is now awake
+    manager._on_hardware_keypress(5, pressed=True)
+    assert len(clicks) == 0, "Contact chatter after wake-up MUST be debounced"
+
+    # Intentional click after debounce window
+    manager.last_press_time[5] = time.time() - 0.5
+    manager._on_hardware_keypress(5, pressed=True)
+    assert clicks == [5], f"Deliberate click on button 5 after wake-up should trigger action, got {clicks}"
+
+    print("✅ Button debouncer logic verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -501,6 +592,8 @@ def run_tests():
         test_lhm_telemetry_parsing()
         print("-"*60)
         test_mqtt_and_tasmota_rendering()
+        print("-"*60)
+        test_button_debounce()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

@@ -111,7 +111,8 @@ class StreamDeckApp:
             font_size_status=self.font_size_status,
             margin_label=self.margin_label,
             margin_status=self.margin_status,
-            small_window_mode=self.small_window_mode
+            small_window_mode=self.small_window_mode,
+            debounce_seconds=self.button_debounce_seconds
         )
         
         # Register a callback to reset activity timer when screen is woken up
@@ -143,6 +144,7 @@ class StreamDeckApp:
             self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")
             self.screen_sleep_end = config_data.get("screen_sleep_end", "07:00")
             self.screen_sleep_timeout = int(config_data.get("screen_sleep_timeout", 300))
+            self.button_debounce_seconds = float(config_data.get("button_debounce_seconds", 0.35))
             self.pc_monitor_mode = config_data.get("pc_monitor_mode", "pull")
             self.pc_monitor_ip = config_data.get("pc_monitor_ip", "localhost")
             self.pc_monitor_port = int(config_data.get("pc_monitor_port", 8085))

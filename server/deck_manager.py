@@ -283,6 +283,8 @@ class DeckManager:
         trigger the short action on release (if no hold threshold was reached).
         """
         if not pressed:
+            held = time.time() - self.last_press_time.get(key_index, 0.0)
+            logging.info(f"DeckManager: Hardware Key Released: {key_index} (held {held:.2f}s)")
             state = self._cancel_press(key_index)
             if state and not state["fired"]:
                 self._trigger_callbacks(key_index)

@@ -382,6 +382,14 @@ class StreamDeckApp:
         logging.info(f"StreamDeckApp: Button {index} pressed. Action: {action_type}, Target: {target_id}")
 
         if action_type == "hue_toggle" and target_id:
+            # A direction with a long press configured can only be triggered by holding the button
+            protect_off = bool(config.get("long_press_off_seconds"))
+            protect_on = bool(config.get("long_press_on_seconds"))
+            if protect_off or protect_on:
+                is_on = self.hue.get_light_state(target_id).get("on", False)
+                if (is_on and protect_off) or (not is_on and protect_on):
+                    logging.info(f"StreamDeckApp: Button {index} short press ignored (hold to turn {'OFF' if is_on else 'ON'})")
+                    return
             success = self.hue.toggle_light(target_id)
             if success:
                 # Instantly update display state

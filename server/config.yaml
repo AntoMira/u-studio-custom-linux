@@ -124,6 +124,8 @@ mqtt:
 #     Holding the button for this many seconds turns the device explicitly ON / OFF (fires as soon as
 #     the time is reached). Set either one or both (use different times if both). When set, the normal
 #     toggle fires on release instead of on press, and only if no long press was triggered.
+#     A direction with a long press can only be triggered by holding: a short press never turns the
+#     device OFF if long_press_off_seconds is set (it only turns it ON), and vice versa.
 #     Value: Positive float or integer seconds (omit to disable).
 #
 # - label:

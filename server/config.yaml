@@ -119,6 +119,13 @@ mqtt:
 #     Value: String representing bridge light index (e.g., "1", "2").
 #     *Not required when action_type is "clock", "pc_monitor", "weather", "weather_forecast", or "weather_forecast+1".
 #
+# - long_press_on_seconds / long_press_off_seconds:
+#     Optional, only for device_type "light" or "plug" with action_type "hue_toggle".
+#     Holding the button for this many seconds turns the device explicitly ON / OFF (fires as soon as
+#     the time is reached). Set either one or both (use different times if both). When set, the normal
+#     toggle fires on release instead of on press, and only if no long press was triggered.
+#     Value: Positive float or integer seconds (omit to disable).
+#
 # - label:
 #     Text label shown at the top of the button key face.
 #     Value: Any string (e.g., "Time", "Ceiling Light").
@@ -164,6 +171,7 @@ buttons:
     action_type: "hue_toggle"
     target: "7"  # Replace with your actual Philips Hue Smart Plug ID
     label: "Impressora 3D"
+    long_press_off_seconds: 2  # Hold 2s to turn the printer OFF
     icon: "3dprinter"
 
   - index: 5

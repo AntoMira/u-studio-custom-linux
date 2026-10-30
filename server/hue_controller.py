@@ -134,6 +134,13 @@ class HueController:
         logging.info(f"HueController: Toggling Device {light_id} -> {'ON' if new_on_state else 'OFF'}")
         return self.set_light_state(light_id, payload)
 
+    def set_power(self, light_id: str, on: bool) -> bool:
+        """
+        Explicitly turns a light or plug ON or OFF (no toggling).
+        """
+        logging.info(f"HueController: Setting Device {light_id} -> {'ON' if on else 'OFF'}")
+        return self.set_light_state(light_id, {"on": bool(on)})
+
     def set_brightness(self, light_id: str, percent: int) -> bool:
         """
         Sets brightness of a bulb (0-100%).

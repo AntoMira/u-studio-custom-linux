@@ -351,6 +351,21 @@ class StreamDeckApp:
                 text_override="WAITING..."
             )
 
+    def on_long_press(self, index: int, action: str):
+        """
+        Callback handler called by DeckManager when a button hold reaches its configured threshold.
+        action is "on" or "off".
+        """
+        self.reset_activity_timer()
+        config = self.buttons_config.get(index)
+        target_id = config.get("target") if config else None
+        if not target_id or config.get("action_type") != "hue_toggle":
+            return
+
+        logging.info(f"StreamDeckApp: Button {index} long-pressed. Turning {action.upper()} target {target_id}")
+        if self.hue.set_power(target_id, action == "on"):
+            self.update_button_state(index)
+
     def on_button_press(self, index: int):
         """
         Callback handler called by DeckManager when a D200 button is pressed.
@@ -525,6 +540,13 @@ class StreamDeckApp:
         """
         # Register the button callback with DeckManager
         self.deck_mgr.register_callback(self.on_button_press)
+        self.deck_mgr.register_long_press_callback(self.on_long_press)
+        for index, config in self.buttons_config.items():
+            if config.get("device_type") in ("light", "plug"):
+                self.deck_mgr.set_long_press_config(index, {
+                    "on": config.get("long_press_on_seconds"),
+                    "off": config.get("long_press_off_seconds"),
+                })
 
         # Register MQTT topics and start MQTT service
         for index, config in self.buttons_config.items():

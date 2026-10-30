@@ -575,6 +575,45 @@ def test_button_debounce():
 
     print("✅ Button debouncer logic verification passed successfully.")
 
+def test_long_press():
+    """
+    Validates long press on DeckManager:
+    - Hold reaching the threshold fires the long callback once, and release does not fire a short click.
+    - Release before the threshold fires the short click only.
+    - Buttons without long press config still fire immediately on press.
+    """
+    print("Testing long press logic on DeckManager...")
+    manager = DeckManager(simulator_mode=True, debounce_seconds=0.0)
+    clicks, longs = [], []
+    manager.register_callback(lambda idx: clicks.append(idx))
+    manager.register_long_press_callback(lambda idx, action: longs.append((idx, action)))
+    manager.set_long_press_config(4, {"off": 0.2})
+
+    # Long hold
+    manager._on_hardware_keypress(4, pressed=True)
+    assert clicks == [] and longs == [], "Nothing should fire before the threshold"
+    time.sleep(0.4)
+    assert longs == [(4, "off")], f"Expected long press off, got {longs}"
+    manager._on_hardware_keypress(4, pressed=False)
+    assert clicks == [], "Release after long press must not fire a short click"
+
+    # Short tap
+    longs.clear()
+    manager._on_hardware_keypress(4, pressed=True)
+    manager._on_hardware_keypress(4, pressed=False)
+    assert clicks == [4], f"Short tap should fire click on release, got {clicks}"
+    time.sleep(0.4)
+    assert longs == [], "Cancelled long press timer must not fire"
+
+    # Button without long press fires on press
+    clicks.clear()
+    manager._on_hardware_keypress(2, pressed=True)
+    assert clicks == [2], "Button without long press config must fire immediately on press"
+    manager._on_hardware_keypress(2, pressed=False)
+    assert clicks == [2], "Release must not fire again"
+
+    print("✅ Long press logic verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -594,6 +633,8 @@ def run_tests():
         test_mqtt_and_tasmota_rendering()
         print("-"*60)
         test_button_debounce()
+        print("-"*60)
+        test_long_press()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

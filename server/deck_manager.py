@@ -82,6 +82,11 @@ class DeckManager:
         self.small_window_mode = small_window_mode
         self.debounce_seconds = float(debounce_seconds)
         self.last_press_time = {}
+        # Long press: {button_index: {"on": seconds, "off": seconds}} and in-flight press state
+        self.long_press_config = {}
+        self.long_press_callback = None
+        self._press_state = {}
+        self._press_lock = threading.Lock()
         os.makedirs(self.cache_dir, exist_ok=True)
         self.screen_on = True
         self.wake_callback = None
@@ -231,12 +236,56 @@ class DeckManager:
             except Exception as e:
                 logging.error(f"DeckManager: Error in button callback for index {button_index}: {e}")
 
+    def register_long_press_callback(self, callback):
+        """
+        Registers callback(button_index, action) invoked when a hold threshold is reached.
+        action is "on" or "off".
+        """
+        self.long_press_callback = callback
+
+    def set_long_press_config(self, button_index: int, thresholds: dict):
+        """
+        Enables long press on a button. thresholds maps action ("on"/"off") to hold seconds.
+        Buttons with long press fire their normal (short) callbacks on release instead of on press.
+        """
+        thresholds = {a: float(s) for a, s in thresholds.items() if a in ("on", "off") and s and float(s) > 0}
+        if thresholds:
+            self.long_press_config[button_index] = thresholds
+        else:
+            self.long_press_config.pop(button_index, None)
+
+    def _fire_long_press(self, key_index: int, action: str, token: object):
+        with self._press_lock:
+            state = self._press_state.get(key_index)
+            if not state or state["token"] is not token:
+                return
+            state["fired"] = True
+        logging.info(f"DeckManager: Long press ({action}) on button {key_index}")
+        if self.long_press_callback:
+            try:
+                self.long_press_callback(key_index, action)
+            except Exception as e:
+                logging.error(f"DeckManager: Error in long press callback for index {key_index}: {e}")
+
+    def _cancel_press(self, key_index: int):
+        """Drops in-flight press state and returns it (None if there was none)."""
+        with self._press_lock:
+            state = self._press_state.pop(key_index, None)
+        if state:
+            for timer in state["timers"]:
+                timer.cancel()
+        return state
+
     def _on_hardware_keypress(self, key_index: int, pressed: bool):
         """
         Internal handler for hardware button events.
-        Only triggers action on key press with debouncing.
+        Triggers action on key press with debouncing. Buttons with long press configured
+        trigger the short action on release (if no hold threshold was reached).
         """
         if not pressed:
+            state = self._cancel_press(key_index)
+            if state and not state["fired"]:
+                self._trigger_callbacks(key_index)
             return
 
         now = time.time()
@@ -260,7 +309,20 @@ class DeckManager:
                     logging.error(f"DeckManager: Error in wake callback: {e}")
             return # Discard this keypress!
 
-        self._trigger_callbacks(key_index)
+        thresholds = self.long_press_config.get(key_index)
+        if not thresholds:
+            self._trigger_callbacks(key_index)
+            return
+
+        self._cancel_press(key_index)
+        token = object()
+        timers = [threading.Timer(secs, self._fire_long_press, args=(key_index, action, token))
+                  for action, secs in sorted(thresholds.items(), key=lambda kv: kv[1])]
+        with self._press_lock:
+            self._press_state[key_index] = {"token": token, "timers": timers, "fired": False}
+        for timer in timers:
+            timer.daemon = True
+            timer.start()
 
     def simulate_press(self, button_index: int, force: bool = False) -> bool:
         """

@@ -27,10 +27,10 @@ def test_config_parsing():
     
     for btn in buttons:
         assert "index" in btn, "Button config is missing 'index' key"
-        # 0-12 are the keys; 13 is the wide info screen (weather_panel)
+        # 0-12 are the keys; 13 is the wide info screen (weather_panel / weather_graph)
         assert 0 <= btn["index"] <= 13, f"Button index {btn['index']} out of range (0-13)"
         if btn["index"] == 13:
-            assert btn.get("action_type") == "weather_panel", "Index 13 (wide info screen) only supports weather_panel"
+            assert btn.get("action_type") in ("weather_panel", "weather_graph"), "Index 13 (wide info screen) only supports weather_panel / weather_graph"
         assert "device_type" in btn, "Button config is missing 'device_type' key"
         assert btn["device_type"] in ("light", "plug", "widget"), f"Unsupported device_type: {btn['device_type']}"
         assert "action_type" in btn, "Button config is missing 'action_type' key"
@@ -789,6 +789,15 @@ def test_weather_panel():
         assert img.size == (458, 196), f"Panel must be 458x196, got {img.size}"
     manager.update_weather_panel(current, data["weather_forecast"], data["daily"][1:5])
     assert os.path.exists(os.path.join(manager.output_sim_dir, "weather_panel.png")), "Simulator must save weather_panel.png"
+
+    # Weather graph: hourly series is timezone-aware and renders at the same size
+    assert len(data["hourly"]) >= 24 and all("temp" in h and "rain" in h for h in data["hourly"]), "Hourly series needs temp and rain"
+    parsed_hourly = parsed["hourly"]
+    assert len(parsed_hourly) == len(payload["list"]) and parsed_hourly[0]["rain"] == 0.0, "Hourly series must mirror the forecast list"
+    graph = manager.render_weather_graph(current, data["weather_forecast"], data["hourly"])
+    assert graph.size == (458, 196), f"Graph must be 458x196, got {graph.size}"
+    manager.update_weather_graph(current, data["weather_forecast"], data["hourly"])
+    assert os.path.exists(os.path.join(manager.output_sim_dir, "weather_graph.png")), "Simulator must save weather_graph.png"
 
     try:
         import strmdck.device_manager as dm

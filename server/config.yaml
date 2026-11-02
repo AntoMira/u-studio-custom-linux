@@ -6,11 +6,11 @@
 # ==============================================================================
 # font_size_label:
 #   Font size used for the top label of the buttons.
-#   Value: Any positive integer (e.g., 12 for default, 30 for extra large).
+#   Value: Any positive integer (default: 30).
 #
 # font_size_status:
 #   Font size used for the bottom status text of the buttons.
-#   Value: Any positive integer (e.g., 10 for default, 30 for extra large).
+#   Value: Any positive integer (default: 30).
 #
 # margin_label:
 #   Top margin offset in pixels to position the top label text.
@@ -18,7 +18,7 @@
 #
 # margin_status:
 #   Bottom margin offset in pixels (from bottom up) to position the status text.
-#   Value: Any integer (default: 25, 45 for large fonts to prevent cutoffs).
+#   Value: Any integer (default: 60, tuned for the default font sizes to prevent cutoffs).
 #
 # small_window_mode:
 #   Custom display layout mode for the Ulanzi D200 small LCD information screen.
@@ -70,10 +70,10 @@
 #   Value: Positive float or integer (default: 10).
 # ==============================================================================
 
-font_size_label: 30     # Font size for the top label (default: 12)
-font_size_status: 30    # Font size for the bottom status text (default: 10)
+font_size_label: 30     # Font size for the top label (default: 30)
+font_size_status: 30    # Font size for the bottom status text (default: 30)
 margin_label: 10        # Top margin for the label (default: 10)
-margin_status: 60       # Bottom margin for the status text (default: 25)
+margin_status: 60       # Bottom margin for the status text (default: 60)
 small_window_background: ""   # Info screen background: "" = black, "default" = Ulanzi logo, or an image path
 small_window_mode: 1    # Small screen mode: 0 for Stats, 1 for Clock, 2 for Background
 state_sync_interval: 5  # Polling interval in seconds to sync device states from bridge (default: 5)

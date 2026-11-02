@@ -74,7 +74,7 @@ class DeckManager:
     SMALL_WINDOW_BG_NAME = "small_window_bg.png"
     CACHE_GRACE_MS = 30000  # keep superseded button images this long so in-flight USB uploads can still read them
 
-    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0, small_window_background: str = ""):
+    def __init__(self, simulator_mode: bool = False, font_size_label: int = 30, font_size_status: int = 30, margin_label: int = 10, margin_status: int = 60, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0, small_window_background: str = ""):
         self.simulator_mode = simulator_mode
         self.has_hardware = not self.simulator_mode
         self.deck = None

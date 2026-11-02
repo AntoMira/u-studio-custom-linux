@@ -66,10 +66,10 @@ class StreamDeckApp:
         # 2. Load and parse config.yaml safely
         self.config_path = os.path.join(base_dir, "config.yaml")
         self.buttons_config = {}
-        self.font_size_label = 12
-        self.font_size_status = 10
+        self.font_size_label = 30
+        self.font_size_status = 30
         self.margin_label = 10
-        self.margin_status = 25
+        self.margin_status = 60
         self.small_window_mode = 0
         self.state_sync_interval = 5
         self.screen_sleep_start = "22:00"
@@ -141,10 +141,10 @@ class StreamDeckApp:
                 # Enforce safe parsing to prevent arbitrary code execution vulnerabilities
                 config_data = yaml.safe_load(f)
                 
-            self.font_size_label = config_data.get("font_size_label", 12)
-            self.font_size_status = config_data.get("font_size_status", 10)
+            self.font_size_label = config_data.get("font_size_label", 30)
+            self.font_size_status = config_data.get("font_size_status", 30)
             self.margin_label = config_data.get("margin_label", 10)
-            self.margin_status = config_data.get("margin_status", 25)
+            self.margin_status = config_data.get("margin_status", 60)
             self.small_window_mode = config_data.get("small_window_mode", 0)
             self.state_sync_interval = int(config_data.get("state_sync_interval", 5))
             self.screen_sleep_start = config_data.get("screen_sleep_start", "22:00")

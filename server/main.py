@@ -120,6 +120,8 @@ class StreamDeckApp:
         # Register a callback to reset activity timer when screen is woken up
         self.deck_mgr.register_wake_callback(self.reset_activity_timer)
 
+        self._weather_panel_signature = None
+
         # Keep track of active clock widgets
         self.clock_buttons = []
         self.running = True
@@ -177,6 +179,9 @@ class StreamDeckApp:
                 index = btn.get("index")
                 if index is not None:
                     self.buttons_config[int(index)] = btn
+            if any(b.get("action_type") == "weather_panel" for b in self.buttons_config.values()) and self.small_window_mode != 2:
+                logging.info("StreamDeckApp: weather_panel configured; forcing small_window_mode=2 (background only).")
+                self.small_window_mode = 2
             logging.info(f"StreamDeckApp: Successfully loaded {len(self.buttons_config)} button mappings.")
         except Exception as e:
             logging.error(f"StreamDeckApp: Failed to parse config.yaml: {e}")
@@ -246,6 +251,24 @@ class StreamDeckApp:
                     min_temp=min_temp,
                     max_temp=max_temp
                 )
+        elif device_type == "widget" and config.get("action_type") == "weather_panel":
+            # Wide info-screen panel: current conditions + next days. Only re-rendered (and re-uploaded
+            # to the D200) when the underlying data changes.
+            weather_data = self.weather_service.get_weather_data()
+            current = weather_data.get("weather")
+            daily = weather_data.get("daily") or []
+            if current and daily:
+                today_iso = datetime.now(self.timezone).date().isoformat()
+                upcoming = [d for d in daily if d["date"] > today_iso][:4]
+                today = next((d for d in daily if d["date"] == today_iso), daily[0])
+                signature = (
+                    round(current["temp"]), round(current["pop"], 1), current["type"], today_iso,
+                    tuple((d["date"], round(d["min_temp"]), round(d["max_temp"]), d["type"], round(d["pop"], 1)) for d in upcoming),
+                    round(today["min_temp"]), round(today["max_temp"]),
+                )
+                if signature != self._weather_panel_signature:
+                    self._weather_panel_signature = signature
+                    self.deck_mgr.update_weather_panel(current, today, upcoming)
         elif device_type == "widget" and config.get("action_type") == "weather":
             # Current Weather Widget
             weather_data = self.weather_service.get_weather_data()
@@ -504,7 +527,7 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
-                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "weather_panel", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)

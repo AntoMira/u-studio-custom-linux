@@ -120,6 +120,8 @@ mqtt:
 #       - "weather"        : Display current weather (temperature, chance of precipitation, and graphics)
 #       - "weather_forecast"   : Display today's weather forecast (min/max temperature)
 #       - "weather_forecast+1" : Display tomorrow's weather forecast (min/max temperature)
+#       - "weather_panel"  : Wide info-screen panel (index 13): current weather + today's range + next 4 days (min/max, icon, rain chance).
+#                            Replaces the clock; small_window_mode is forced to 2 (background only).
 #       - "tasmota_sensor" : Display temperature and humidity from a Tasmota MQTT telemetry topic
 #       - "tasmota_power"  : Display power consumption (Watts/kW) and current (Amperes) from a Tasmota smart plug via MQTT
 #
@@ -237,17 +239,7 @@ buttons:
     topic: "tele/sala/SENSOR"
     icon: "thermometer"
 
-  - index: 10
+  - index: 13        # Wide info screen (replaces the clock)
     device_type: "widget"
-    action_type: "weather_forecast"
-    label: "Hoje"
-
-  - index: 11
-    device_type: "widget"
-    action_type: "weather_forecast+1"
-    label: "Amanha"
-
-  - index: 12
-    device_type: "widget"
-    action_type: "weather"
-    label: "Agora"
+    action_type: "weather_panel"
+    label: "Clima"

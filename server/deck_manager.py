@@ -3,6 +3,8 @@ import logging
 import time
 import threading
 import asyncio
+from datetime import datetime
+import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # Set up logging format
@@ -430,6 +432,177 @@ class DeckManager:
         else:
             self.last_press_time.pop(button_index, None)
 
+    @staticmethod
+    def _draw_weather_icon(draw, center_x, center_y, weather_type, fg_color, accent=None):
+        accent = accent or fg_color
+        # Custom premium weather graphics
+        if weather_type == "clear":
+            # Draw a glowing sun
+            sun_r = 18
+            draw.ellipse([center_x - sun_r, center_y - sun_r, center_x + sun_r, center_y + sun_r], fill=None, outline=fg_color, width=3)
+            # 8 radiating rays
+            ray_len = 8
+            for angle in range(0, 360, 45):
+                rad = math.radians(angle)
+                x1 = center_x + (sun_r + 4) * math.cos(rad)
+                y1 = center_y + (sun_r + 4) * math.sin(rad)
+                x2 = center_x + (sun_r + 4 + ray_len) * math.cos(rad)
+                y2 = center_y + (sun_r + 4 + ray_len) * math.sin(rad)
+                draw.line([x1, y1, x2, y2], fill=fg_color, width=2)
+        elif weather_type == "clouds":
+            # Fluffy Cloud shape
+            draw.ellipse([center_x - 22, center_y - 5, center_x - 5, center_y + 12], fill=fg_color)
+            draw.ellipse([center_x - 13, center_y - 18, center_x + 13, center_y + 12], fill=fg_color)
+            draw.ellipse([center_x + 5, center_y - 5, center_x + 22, center_y + 12], fill=fg_color)
+            draw.rectangle([center_x - 18, center_y + 3, center_x + 18, center_y + 12], fill=fg_color)
+        elif weather_type == "rain":
+            # Cloud with raindrops
+            draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+            draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+            # Raindrops
+            draw.line([center_x - 10, center_y + 13, center_x - 13, center_y + 21], fill=accent, width=2)
+            draw.line([center_x, center_y + 13, center_x - 3, center_y + 21], fill=accent, width=2)
+            draw.line([center_x + 10, center_y + 13, center_x + 7, center_y + 21], fill=accent, width=2)
+        elif weather_type == "thunderstorm":
+            # Cloud with lightning bolt
+            draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+            draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+            # Lightning zigzag
+            draw.line([center_x + 3, center_y + 11, center_x - 3, center_y + 17], fill=accent, width=2)
+            draw.line([center_x - 3, center_y + 17, center_x + 2, center_y + 17], fill=accent, width=2)
+            draw.line([center_x + 2, center_y + 17, center_x - 3, center_y + 24], fill=accent, width=2)
+        elif weather_type == "snow":
+            # Cloud with snow crosses
+            draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
+            draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
+            draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
+            # Snowflake crosses
+            draw.line([center_x - 10, center_y + 15, center_x - 6, center_y + 15], fill=accent, width=2)
+            draw.line([center_x - 8, center_y + 13, center_x - 8, center_y + 17], fill=accent, width=2)
+            draw.line([center_x + 8, center_y + 15, center_x + 4, center_y + 15], fill=accent, width=2)
+            draw.line([center_x + 6, center_y + 13, center_x + 6, center_y + 17], fill=accent, width=2)
+        elif weather_type == "mist":
+            # Horizontal fog/breeze lines
+            draw.rectangle([center_x - 22, center_y - 9, center_x + 22, center_y - 6], fill=fg_color)
+            draw.rectangle([center_x - 13, center_y - 2, center_x + 18, center_y + 1], fill=fg_color)
+            draw.rectangle([center_x - 18, center_y + 5, center_x + 13, center_y + 8], fill=fg_color)
+
+    WEEKDAYS_PT = ("SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM")
+    # weather type -> (main color, accent for drops / bolt / flakes)
+    WEATHER_ICON_COLORS = {
+        "clear": ((255, 205, 50), None),
+        "clouds": ((245, 245, 250), None),
+        "rain": ((150, 165, 190), (80, 170, 255)),
+        "thunderstorm": ((125, 130, 155), (255, 215, 60)),
+        "snow": ((170, 185, 205), (255, 255, 255)),
+        "mist": ((175, 180, 190), None),
+    }
+
+    @staticmethod
+    def _soft_temp_color(temp: float) -> tuple:
+        """Temperature gradient color lightened so it stays readable on a black background."""
+        r, g, b = get_color_for_temp(temp)
+        return (int(r + (255 - r) * 0.4), int(g + (255 - g) * 0.4), int(b + (255 - b) * 0.4))
+
+    def _paste_weather_icon(self, img, cx, cy, weather_type, scale=1.0):
+        icon = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        color, accent = self.WEATHER_ICON_COLORS.get(weather_type, ((255, 255, 255), None))
+        self._draw_weather_icon(ImageDraw.Draw(icon), 32, 32, weather_type, color, accent)
+        size = int(64 * scale)
+        if size > 64:
+            # Upscale in blocks then downsample, which antialiases the 1px geometric edges
+            icon = icon.resize((256, 256), Image.NEAREST).resize((size, size), Image.LANCZOS)
+        elif size != 64:
+            icon = icon.resize((size, size), Image.LANCZOS)
+        img.paste(icon, (int(cx - size / 2), int(cy - size / 2)), icon)
+
+    @staticmethod
+    def _draw_drop(draw, x, y, color, h=14):
+        """Small raindrop with its tip at (x, y)."""
+        w = h * 0.36
+        draw.polygon([(x, y), (x - w, y + h * 0.6), (x + w, y + h * 0.6)], fill=color)
+        draw.ellipse([x - w, y + h * 0.3, x + w, y + h], fill=color)
+
+    def render_weather_panel(self, current: dict, today: dict, days: list):
+        """
+        Renders the 458x196 weather panel: current conditions + today's range on the left,
+        followed by one column per upcoming day (weekday, icon, max/min with a range bar, rain chance).
+        current: {temp, pop, type}; today: {min_temp, max_temp}; days: [{date(ISO), min_temp, max_temp, type, pop}]
+        """
+        width, height = self.SMALL_WINDOW_SIZE
+        img = Image.new("RGB", (width, height), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        f = lambda size: ImageFont.load_default(size=size)
+        white = (255, 255, 255)
+
+        def rain_chance(x, y, pop, right_aligned=False):
+            pct = int(round(pop * 100))
+            if pct < 30:
+                return
+            label = f"{pct}%"
+            tw = draw.textlength(label, font=f(16))
+            total = 10 + 4 + tw
+            x0 = x - total if right_aligned else x - total / 2
+            self._draw_drop(draw, x0 + 5, y, (110, 175, 255), h=14)
+            draw.text((x0 + 14, y + 7), label, font=f(16), fill=(150, 200, 255), anchor="lm")
+
+        # --- Left block: current conditions ---
+        left_w = 148
+        draw.text((10, 8), "AGORA", font=f(22), fill=white, anchor="lt")
+        self._paste_weather_icon(img, left_w // 2, 62, current.get("type", "clear"), scale=1.8)
+        cur_temp = current.get('temp', 0)
+        draw.text((left_w // 2, 108), f"{int(round(cur_temp))}°", font=f(54), fill=self._soft_temp_color(cur_temp), anchor="mt")
+        if today:
+            lo_t, hi_t = today['min_temp'], today['max_temp']
+            lo_s, hi_s = f"{int(round(lo_t))}°", f"{int(round(hi_t))}°"
+            sep = " / "
+            fr = f(26)
+            total = draw.textlength(lo_s, font=fr) + draw.textlength(sep, font=fr) + draw.textlength(hi_s, font=fr)
+            x = left_w / 2 - total / 2
+            for txt, col in ((lo_s, self._soft_temp_color(lo_t)), (sep, white), (hi_s, self._soft_temp_color(hi_t))):
+                draw.text((x, 164), txt, font=fr, fill=col, anchor="lt")
+                x += draw.textlength(txt, font=fr)
+        if current.get("pop", 0) >= 0.3:
+            rain_chance(left_w - 8, 8, current["pop"], right_aligned=True)
+        draw.line([left_w, 14, left_w, height - 14], fill=(55, 55, 62), width=2)
+
+        # --- Day columns ---
+        days = days[:4]
+        if not days:
+            return img
+        col_x0 = left_w + 6
+        col_w = (width - col_x0 - 4) / len(days)
+        for i, day in enumerate(days):
+            cx = col_x0 + col_w * (i + 0.5)
+            try:
+                wd = self.WEEKDAYS_PT[datetime.fromisoformat(day["date"]).weekday()]
+            except Exception:
+                wd = "---"
+            draw.text((cx, 8), wd, font=f(24), fill=white, anchor="mt")
+            self._paste_weather_icon(img, cx, 62, day.get("type", "clear"), scale=1.0)
+            draw.text((cx, 90), f"{int(round(day['max_temp']))}°", font=f(32), fill=self._soft_temp_color(day["max_temp"]), anchor="mt")
+            draw.text((cx, 128), f"{int(round(day['min_temp']))}°", font=f(32), fill=self._soft_temp_color(day["min_temp"]), anchor="mt")
+            rain_chance(cx, 172, day.get("pop", 0))
+        return img
+
+    def update_weather_panel(self, current: dict, today: dict, days: list):
+        """
+        Renders the weather panel and shows it on the wide info screen (small window cell).
+        """
+        img = self.render_weather_panel(current, today, days)
+        if self.simulator_mode:
+            try:
+                img.save(os.path.join(self.output_sim_dir, "weather_panel.png"))
+            except Exception as e:
+                logging.error(f"DeckManager (SIM): Failed to save weather panel: {e}")
+            return
+        self._store_hw_image(self.SMALL_WINDOW_INDEX, img)
+
     def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None, power_val: float = None, max_power: float = 1000.0):
         """
         Draws the button image using Pillow and pushes it to the D200 key (or saves it in Simulator Mode).
@@ -684,63 +857,7 @@ class DeckManager:
                 draw.ellipse([center_x - 3, center_y - 3, center_x + 3, center_y + 3], fill=fg_color)
                 draw.line([center_x + 10, center_y + 15, center_x + 2, center_y + 2], fill=fg_color, width=2)
             elif weather_type:
-                # Custom premium weather graphics
-                if weather_type == "clear":
-                    # Draw a glowing sun
-                    sun_r = 18
-                    draw.ellipse([center_x - sun_r, center_y - sun_r, center_x + sun_r, center_y + sun_r], fill=None, outline=fg_color, width=3)
-                    # 8 radiating rays
-                    import math
-                    ray_len = 8
-                    for angle in range(0, 360, 45):
-                        rad = math.radians(angle)
-                        x1 = center_x + (sun_r + 4) * math.cos(rad)
-                        y1 = center_y + (sun_r + 4) * math.sin(rad)
-                        x2 = center_x + (sun_r + 4 + ray_len) * math.cos(rad)
-                        y2 = center_y + (sun_r + 4 + ray_len) * math.sin(rad)
-                        draw.line([x1, y1, x2, y2], fill=fg_color, width=2)
-                elif weather_type == "clouds":
-                    # Fluffy Cloud shape
-                    draw.ellipse([center_x - 22, center_y - 5, center_x - 5, center_y + 12], fill=fg_color)
-                    draw.ellipse([center_x - 13, center_y - 18, center_x + 13, center_y + 12], fill=fg_color)
-                    draw.ellipse([center_x + 5, center_y - 5, center_x + 22, center_y + 12], fill=fg_color)
-                    draw.rectangle([center_x - 18, center_y + 3, center_x + 18, center_y + 12], fill=fg_color)
-                elif weather_type == "rain":
-                    # Cloud with raindrops
-                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
-                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
-                    # Raindrops
-                    draw.line([center_x - 10, center_y + 13, center_x - 13, center_y + 21], fill=fg_color, width=2)
-                    draw.line([center_x, center_y + 13, center_x - 3, center_y + 21], fill=fg_color, width=2)
-                    draw.line([center_x + 10, center_y + 13, center_x + 7, center_y + 21], fill=fg_color, width=2)
-                elif weather_type == "thunderstorm":
-                    # Cloud with lightning bolt
-                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
-                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
-                    # Lightning zigzag
-                    draw.line([center_x + 3, center_y + 11, center_x - 3, center_y + 17], fill=fg_color, width=2)
-                    draw.line([center_x - 3, center_y + 17, center_x + 2, center_y + 17], fill=fg_color, width=2)
-                    draw.line([center_x + 2, center_y + 17, center_x - 3, center_y + 24], fill=fg_color, width=2)
-                elif weather_type == "snow":
-                    # Cloud with snow crosses
-                    draw.ellipse([center_x - 22, center_y - 10, center_x - 5, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x - 13, center_y - 23, center_x + 13, center_y + 7], fill=fg_color)
-                    draw.ellipse([center_x + 5, center_y - 10, center_x + 22, center_y + 7], fill=fg_color)
-                    draw.rectangle([center_x - 18, center_y - 2, center_x + 18, center_y + 7], fill=fg_color)
-                    # Snowflake crosses
-                    draw.line([center_x - 10, center_y + 15, center_x - 6, center_y + 15], fill=fg_color, width=2)
-                    draw.line([center_x - 8, center_y + 13, center_x - 8, center_y + 17], fill=fg_color, width=2)
-                    draw.line([center_x + 8, center_y + 15, center_x + 4, center_y + 15], fill=fg_color, width=2)
-                    draw.line([center_x + 6, center_y + 13, center_x + 6, center_y + 17], fill=fg_color, width=2)
-                elif weather_type == "mist":
-                    # Horizontal fog/breeze lines
-                    draw.rectangle([center_x - 22, center_y - 9, center_x + 22, center_y - 6], fill=fg_color)
-                    draw.rectangle([center_x - 13, center_y - 2, center_x + 18, center_y + 1], fill=fg_color)
-                    draw.rectangle([center_x - 18, center_y + 5, center_x + 13, center_y + 8], fill=fg_color)
+                self._draw_weather_icon(draw, center_x, center_y, weather_type, fg_color)
             else:
                 # Clock dial
                 draw.ellipse([center_x - r, center_y - r, center_x + r, center_y + r], fill=None, outline=fg_color, width=3)
@@ -844,39 +961,45 @@ class DeckManager:
                 logging.error(f"DeckManager (SIM): Failed to save button {index} image: {e}")
         else:
             # Physical deck communication
-            try:
-                # Clean up stale cached images for this button index to prevent disk accumulation.
-                # Recent files are kept: a queued USB upload may still reference an older snapshot of this button.
-                now_ms = int(time.time() * 1000)
-                for filename in os.listdir(self.cache_dir):
-                    if filename.startswith(f"button_{index}_") and filename.endswith(".png"):
-                        try:
-                            file_ms = int(filename[len(f"button_{index}_"):-len(".png")])
-                        except ValueError:
-                            continue
-                        if now_ms - file_ms < self.CACHE_GRACE_MS:
-                            continue
-                        try:
-                            os.remove(os.path.join(self.cache_dir, filename))
-                        except Exception as e:
-                            logging.warning(f"DeckManager: Failed to delete old cached file {filename}: {e}")
+            self._store_hw_image(index, img)
 
-                # Save the rendered Pillow image with a unique timestamp to bypass firmware caches
-                timestamp = int(time.time() * 1000)
-                icon_name = f"button_{index}_{timestamp}.png"
-                img_path = os.path.join(self.cache_dir, icon_name)
-                img.save(img_path)
-                
-                # Update our active buttons map
-                self.active_buttons[index] = {
-                    'name': '',
-                    'icon': icon_name
-                }
-                
-                # Trigger the hardware update
-                self._hw_update_buttons()
-            except Exception as e:
-                logging.error(f"DeckManager (HW): Failed to update button {index} display: {e}")
+    def _store_hw_image(self, index: int, img):
+        """
+        Saves a rendered image for a grid cell into the icon cache and schedules the page upload.
+        """
+        try:
+            # Clean up stale cached images for this button index to prevent disk accumulation.
+            # Recent files are kept: a queued USB upload may still reference an older snapshot of this button.
+            now_ms = int(time.time() * 1000)
+            for filename in os.listdir(self.cache_dir):
+                if filename.startswith(f"button_{index}_") and filename.endswith(".png"):
+                    try:
+                        file_ms = int(filename[len(f"button_{index}_"):-len(".png")])
+                    except ValueError:
+                        continue
+                    if now_ms - file_ms < self.CACHE_GRACE_MS:
+                        continue
+                    try:
+                        os.remove(os.path.join(self.cache_dir, filename))
+                    except Exception as e:
+                        logging.warning(f"DeckManager: Failed to delete old cached file {filename}: {e}")
+
+            # Save the rendered Pillow image with a unique timestamp to bypass firmware caches
+            timestamp = int(time.time() * 1000)
+            icon_name = f"button_{index}_{timestamp}.png"
+            img_path = os.path.join(self.cache_dir, icon_name)
+            img.save(img_path)
+            
+            # Update our active buttons map
+            self.active_buttons[index] = {
+                'name': '',
+                'icon': icon_name
+            }
+            
+            # Trigger the hardware update
+            self._hw_update_buttons()
+        except Exception as e:
+            logging.error(f"DeckManager (HW): Failed to update button {index} display: {e}")
 
     def close(self):
         """

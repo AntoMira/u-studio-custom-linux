@@ -27,7 +27,10 @@ def test_config_parsing():
     
     for btn in buttons:
         assert "index" in btn, "Button config is missing 'index' key"
-        assert 0 <= btn["index"] <= 12, f"Button index {btn['index']} out of range (0-12)"
+        # 0-12 are the keys; 13 is the wide info screen (weather_panel)
+        assert 0 <= btn["index"] <= 13, f"Button index {btn['index']} out of range (0-13)"
+        if btn["index"] == 13:
+            assert btn.get("action_type") == "weather_panel", "Index 13 (wide info screen) only supports weather_panel"
         assert "device_type" in btn, "Button config is missing 'device_type' key"
         assert btn["device_type"] in ("light", "plug", "widget"), f"Unsupported device_type: {btn['device_type']}"
         assert "action_type" in btn, "Button config is missing 'action_type' key"
@@ -757,6 +760,57 @@ def test_small_window_background():
 
     print("✅ Small window background verification passed successfully.")
 
+def test_weather_panel():
+    """
+    Validates the wide weather panel: daily forecast parsing, 458x196 rendering for every weather type,
+    and that the physical deck uploads it for the wide info screen cell.
+    """
+    print("Testing weather panel (daily forecast + wide render)...")
+    ws = WeatherService(api_key="", city="Test")
+    data = ws.get_weather_data()
+    assert len(data["daily"]) >= 4, "Daily forecast must cover at least 4 days"
+    assert all(k in data["daily"][0] for k in ("date", "min_temp", "max_temp", "type", "pop")), "Daily entries need date/min/max/type/pop"
+
+    # Parse a real-shaped OpenWeather payload spanning 5 dates
+    base = int(time.time())
+    payload = {"list": [
+        {"dt": base + h * 3600, "main": {"temp": 20, "temp_min": 15 + h % 5, "temp_max": 25 - h % 3}, "weather": [{"id": 500 if h % 7 == 0 else 800}], "pop": 0.4 if h % 7 == 0 else 0.1}
+        for h in range(0, 120, 3)
+    ]}
+    parsed = ws._parse_forecast_data(payload)
+    assert 4 <= len(parsed["daily"]) <= 5, f"Expected 4-5 daily entries, got {len(parsed['daily'])}"
+    assert all(d["pop"] >= 0.1 for d in parsed["daily"]), "Daily pop must be the max of the day's entries"
+
+    manager = DeckManager(simulator_mode=True)
+    current = data["weather"]
+    for wtype in ("clear", "clouds", "rain", "thunderstorm", "snow", "mist"):
+        days = [dict(d, type=wtype) for d in data["daily"][1:5]]
+        img = manager.render_weather_panel(dict(current, type=wtype), data["weather_forecast"], days)
+        assert img.size == (458, 196), f"Panel must be 458x196, got {img.size}"
+    manager.update_weather_panel(current, data["weather_forecast"], data["daily"][1:5])
+    assert os.path.exists(os.path.join(manager.output_sim_dir, "weather_panel.png")), "Simulator must save weather_panel.png"
+
+    try:
+        import strmdck.device_manager as dm
+    except ImportError:
+        print("⚠️ strmdck not installed in this interpreter; skipping hardware panel upload check.")
+        print("✅ Weather panel verification passed successfully.")
+        return
+    original = dm.auto_connect
+    dm.auto_connect = lambda: None
+    try:
+        hw = DeckManager(simulator_mode=False, reconnect_seconds=1)
+        hw.update_weather_panel(current, data["weather_forecast"], data["daily"][1:5])
+        entry = hw.active_buttons[DeckManager.SMALL_WINDOW_INDEX]
+        assert entry["icon"].startswith(f"button_{DeckManager.SMALL_WINDOW_INDEX}_"), "Panel must replace the wide cell image"
+        assert Image.open(os.path.join(hw.cache_dir, entry["icon"])).size == (458, 196)
+        if hw._update_timer:
+            hw._update_timer.cancel()
+    finally:
+        dm.auto_connect = original
+
+    print("✅ Weather panel verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -784,6 +838,8 @@ def run_tests():
         test_hardware_icon_cache()
         print("-"*60)
         test_small_window_background()
+        print("-"*60)
+        test_weather_panel()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

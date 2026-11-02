@@ -83,7 +83,7 @@ HUE_USERNAME=your_generated_api_username
 SIMULATOR_MODE=True            # Set to False to communicate with physical D200 hardware
 TIMEZONE=America/Sao_Paulo    # Configure your preferred local timezone
 
-# OpenWeather API Configuration (Required for weather, weather_forecast, and weather_forecast+1)
+# OpenWeather API Configuration (Required for weather, weather_forecast, weather_forecast+1, and weather_panel)
 OPENWEATHER_API_KEY=your_openweather_api_key
 OPENWEATHER_CITY=Sao Paulo,BR
 ```
@@ -152,6 +152,9 @@ keep_screen_on_hue_ids: "2, 5, 6"             # Comma-separated list of Hue Ligh
 
 The Stream Deck features real-time weather widgets for current conditions (`action_type: weather`), today's forecast (`action_type: weather_forecast`), and tomorrow's forecast (`action_type: weather_forecast+1`).
 
+### Wide Weather Panel (`action_type: weather_panel`)
+The D200 info screen can be used as a wide display instead of the clock. Add a button with `index: 13` and `action_type: weather_panel` (`small_window_mode` is forced to `2`, background only). It shows the current temperature, rain chance and today's min/max on the left, and the next 4 days on the right (weekday, icon, max and min, rain chance when ≥ 30%). Temperatures follow the color scale below and icons are colored by condition (yellow sun, white clouds, blue-gray rain, etc.). It is only redrawn and re-uploaded when the data changes.
+
 ### 1. Dynamic Temperature Gradient Backgrounds
 When displaying weather forecasts, the button background dynamically interpolates a horizontal color gradient derived from the predicted **Minimum** (left) and **Maximum** (right) temperatures:
 
@@ -164,7 +167,7 @@ When displaying weather forecasts, the button background dynamically interpolate
 *Example:* A forecast predicting `17°C` to `30°C` generates a continuous smooth gradient transitioning from Deep Blue on the left to Vibrant Orange on the right, overlaid with a translucent dark container for high-contrast legibility.
 
 ### 2. Geometric Weather Icons
-Weather conditions map directly to clean geometric vector drawings rendered in crisp white:
+Weather conditions map directly to clean geometric vector drawings (white on the weather buttons, colored by condition on the wide panel):
 * **`clear`**: Sun outline with 8 radiating solar rays.
 * **`clouds`**: Fluffy cloud silhouette.
 * **`rain`**: Cloud silhouette with falling diagonal raindrops.

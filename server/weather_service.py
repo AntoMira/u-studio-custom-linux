@@ -63,11 +63,7 @@ class WeatherService:
         # If key is missing/placeholder, yield premium mock data
         if self.is_mock_mode():
             logging.info("WeatherService: Operating in MOCK mode (No valid API key). Returning premium mock forecast.")
-            self._cache = {
-                "weather": { "temp": 20.5, "pop": 0.35, "type": "clouds" },
-                "weather_forecast": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
-                "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
-            }
+            self._cache = self._mock_data()
             self._cache_time = now
             return self._cache
 
@@ -99,10 +95,22 @@ class WeatherService:
             return self._cache
 
         logging.warning("WeatherService: Returning simulated mock forecast due to API failure.")
+        return self._mock_data()
+
+    def _mock_data(self) -> dict:
+        today = datetime.now().date()
+        mock_days = [
+            (18.0, 26.0, "clear", 0.05), (16.0, 22.0, "rain", 0.8), (15.0, 21.0, "clouds", 0.2),
+            (14.0, 24.0, "clear", 0.0), (17.0, 29.0, "thunderstorm", 0.6),
+        ]
         return {
             "weather": { "temp": 20.5, "pop": 0.35, "type": "clouds" },
             "weather_forecast": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
-            "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+            "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" },
+            "daily": [
+                { "date": (today + timedelta(days=i)).isoformat(), "min_temp": lo, "max_temp": hi, "type": t, "pop": pop }
+                for i, (lo, hi, t, pop) in enumerate(mock_days)
+            ],
         }
 
     def _parse_forecast_data(self, data: dict) -> dict:
@@ -170,6 +178,13 @@ class WeatherService:
         else:
             parsed["weather_forecast+1"] = { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
 
+        # Daily summaries (today + following days available in the 5-day forecast)
+        parsed["daily"] = []
+        for day in sorted_dates[:5]:
+            summary = self._aggregate_day_records(days_data[day])
+            summary["date"] = day.isoformat()
+            parsed["daily"].append(summary)
+
         return parsed
 
     def _aggregate_day_records(self, records: list) -> dict:
@@ -180,8 +195,10 @@ class WeatherService:
         temps_max = []
         best_type = "clear"
         max_priority = -1
+        max_pop = 0.0
 
         for item in records:
+            max_pop = max(max_pop, item.get("pop", 0.0))
             main = item.get("main", {})
             if "temp_min" in main:
                 temps_min.append(main["temp_min"])
@@ -202,5 +219,6 @@ class WeatherService:
         return {
             "min_temp": min_temp,
             "max_temp": max_temp,
-            "type": best_type
+            "type": best_type,
+            "pop": max_pop
         }

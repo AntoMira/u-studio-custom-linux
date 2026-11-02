@@ -7,10 +7,27 @@ This project is a highly customizable, local Python-based controller for the **U
 2.  Adjust light brightness.
 3.  Display real-time states ("ON", "OFF", brightness %) dynamically drawn over custom PNG icons with solid color status backgrounds.
 4.  Render a background digital clock widget ("HH:MM") updating in real time based on customizable timezone configuration.
-5.  Render real-time geometric Weather widgets (for Today and Tomorrow) with caching and tap-to-force-refresh.
+5.  Render real-time geometric Weather widgets (for Today and Tomorrow) with caching and tap-to-force-refresh, plus wide weather panels (4-day forecast or 3-hour temperature/rain graph) on the info screen.
 6.  Display Windows PC telemetry statistics (CPU, GPU, RAM, and Disk) with smooth 5-second slide carousel rotations.
+7.  Show Tasmota MQTT sensors (temperature, humidity) and power consumption.
 
 For developers and off-grid testing, the application includes a robust **Simulator Mode** that allows you to emulate button clicks from your console and writes visual screens directly to a local directory for preview.
+
+---
+
+## 🖼️ Widget Gallery
+
+Images rendered by the app itself in Simulator Mode (sample data).
+
+**Buttons** (left to right): current weather, today's forecast, tomorrow's forecast, PC monitor, GPU monitor, Tasmota temperature/humidity sensor, Tasmota power.
+
+![Button widgets](assets/widgets/buttons.png)
+
+**Wide info screen** (`index: 13`): `weather_panel` and `weather_graph`.
+
+![Weather panel](assets/widgets/weather_panel.png)
+
+![Weather graph](assets/widgets/weather_graph.png)
 
 ---
 
@@ -155,8 +172,12 @@ The Stream Deck features real-time weather widgets for current conditions (`acti
 ### Wide Weather Panel (`action_type: weather_panel`)
 The D200 info screen can be used as a wide display instead of the clock. Add a button with `index: 13` and `action_type: weather_panel` (`small_window_mode` is forced to `2`, background only). It shows the current temperature, rain chance and today's min/max on the left, and the next 4 days on the right (weekday, icon, max and min, rain chance when ≥ 30%). Temperatures follow the color scale below and icons are colored by condition (yellow sun, white clouds, blue-gray rain, etc.). It is only redrawn and re-uploaded when the data changes.
 
+![Weather panel](assets/widgets/weather_panel.png)
+
 ### Wide Weather Graph (`action_type: weather_graph`)
 Alternative to `weather_panel` on the info screen (`index: 13`). The left block (current conditions) is identical; the right side shows one bar per 3-hour forecast (next ~4 days). Bar height is the temperature on a 0–45 °C scale and bar color follows the temperature color scale. A dotted white line marks each midnight, with the weekday written above each day. A translucent white curve over the bars shows the forecast rain in mm per 3 hours (0 to 30 mm, `WEATHER_GRAPH_MAX_RAIN_MM` in `deck_manager.py`). No numbers are drawn.
+
+![Weather graph](assets/widgets/weather_graph.png)
 
 ### 1. Dynamic Temperature Gradient Backgrounds
 When displaying weather forecasts, the button background dynamically interpolates a horizontal color gradient derived from the predicted **Minimum** (left) and **Maximum** (right) temperatures:
@@ -322,7 +343,8 @@ This project makes use of the following awesome open-source projects and librari
 *   **[Philips Hue API](https://developers.meethue.com/)**: Local REST API for Philips Hue bridge and smart device control.
 *   **[Pillow (PIL)](https://python-pillow.org/)**: Python Imaging Library used for real-time dynamic key screen rendering.
 *   **[Google Antigravity](https://deepmind.google/) & [Google Gemini](https://gemini.google.com/)**: AI pair programming platform and models used to architect, build, debug, and document this codebase.
+*   **[Claude](https://claude.ai/) & [Claude Code](https://claude.com/claude-code)**: Anthropic's AI assistant and coding agent, used to build the weather panel and graph widgets, fix timezone handling, and maintain this documentation.
 
 ---
 
-*Built with ❤️ using **Google Antigravity** & **Google Gemini**.*
+*Built with ❤️ using **Google Antigravity**, **Google Gemini** & **Claude**.*

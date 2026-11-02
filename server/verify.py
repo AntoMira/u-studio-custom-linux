@@ -683,6 +683,43 @@ def test_hardware_reconnect():
 
     print("✅ D200 hardware reconnect verification passed successfully.")
 
+def test_hardware_icon_cache():
+    """
+    Validates the physical-deck icon cache: a superseded button image must survive the grace period
+    (a queued USB upload may still reference it) and only be removed once it is stale.
+    """
+    print("Testing hardware icon cache cleanup on DeckManager...")
+    try:
+        import strmdck.device_manager as dm
+    except ImportError:
+        print("⚠️ strmdck not installed in this interpreter (use venv/bin/python); skipping icon cache test.")
+        return
+
+    original = dm.auto_connect
+    dm.auto_connect = lambda: None
+    try:
+        manager = DeckManager(simulator_mode=False, reconnect_seconds=1)
+        manager.CACHE_GRACE_MS = 1000
+        manager.update_button(index=11, label="A", device_type="light", is_on=True)
+        first = manager.active_buttons[11]['icon']
+        time.sleep(0.01)
+        manager.update_button(index=11, label="A", device_type="light", is_on=False)
+        second = manager.active_buttons[11]['icon']
+        assert first != second, "Each update must produce a new image file"
+        first_path = os.path.join(manager.cache_dir, first)
+        assert os.path.exists(first_path), "Superseded image must still exist during the grace period"
+
+        time.sleep(1.1)
+        manager.update_button(index=11, label="A", device_type="light", is_on=True)
+        assert not os.path.exists(first_path), "Stale superseded image must be cleaned up"
+        assert os.path.exists(os.path.join(manager.cache_dir, manager.active_buttons[11]['icon']))
+        if manager._update_timer:
+            manager._update_timer.cancel()
+    finally:
+        dm.auto_connect = original
+
+    print("✅ Hardware icon cache cleanup verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -706,6 +743,8 @@ def run_tests():
         test_long_press()
         print("-"*60)
         test_hardware_reconnect()
+        print("-"*60)
+        test_hardware_icon_cache()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

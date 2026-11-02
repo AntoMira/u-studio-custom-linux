@@ -67,6 +67,8 @@ class DeckManager:
     Manages communication with the Ulanzi D200 Stream Deck.
     Features a robust Simulator Mode that saves button screens as PNG images for visual verification.
     """
+    CACHE_GRACE_MS = 30000  # keep superseded button images this long so in-flight USB uploads can still read them
+
     def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0):
         self.simulator_mode = simulator_mode
         self.has_hardware = not self.simulator_mode
@@ -817,9 +819,17 @@ class DeckManager:
         else:
             # Physical deck communication
             try:
-                # Clean up old cached images for this button index to prevent disk accumulation
+                # Clean up stale cached images for this button index to prevent disk accumulation.
+                # Recent files are kept: a queued USB upload may still reference an older snapshot of this button.
+                now_ms = int(time.time() * 1000)
                 for filename in os.listdir(self.cache_dir):
                     if filename.startswith(f"button_{index}_") and filename.endswith(".png"):
+                        try:
+                            file_ms = int(filename[len(f"button_{index}_"):-len(".png")])
+                        except ValueError:
+                            continue
+                        if now_ms - file_ms < self.CACHE_GRACE_MS:
+                            continue
                         try:
                             os.remove(os.path.join(self.cache_dir, filename))
                         except Exception as e:

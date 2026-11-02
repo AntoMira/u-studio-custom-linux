@@ -3,7 +3,7 @@ import logging
 import time
 import threading
 import asyncio
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # Set up logging format
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -67,9 +67,12 @@ class DeckManager:
     Manages communication with the Ulanzi D200 Stream Deck.
     Features a robust Simulator Mode that saves button screens as PNG images for visual verification.
     """
+    SMALL_WINDOW_INDEX = 13  # grid cell of the wide info screen (manifest cell 3_2)
+    SMALL_WINDOW_SIZE = (458, 196)
+    SMALL_WINDOW_BG_NAME = "small_window_bg.png"
     CACHE_GRACE_MS = 30000  # keep superseded button images this long so in-flight USB uploads can still read them
 
-    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0):
+    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0, small_window_background: str = ""):
         self.simulator_mode = simulator_mode
         self.has_hardware = not self.simulator_mode
         self.deck = None
@@ -84,6 +87,7 @@ class DeckManager:
         self.small_window_mode = small_window_mode
         self.debounce_seconds = float(debounce_seconds)
         self.reconnect_seconds = max(1.0, float(reconnect_seconds))
+        self.small_window_background = (small_window_background or "").strip()
         self.last_press_time = {}
         # Long press: {button_index: {"on": seconds, "off": seconds}} and in-flight press state
         self.long_press_config = {}
@@ -101,6 +105,7 @@ class DeckManager:
         else:
             logging.info("DeckManager: Initializing physical Ulanzi D200 Stream Deck connection...")
             self.active_buttons = {i: None for i in range(13)}
+            self._init_small_window_background()
             self.first_update = True
             self._update_timer = None
             
@@ -135,6 +140,27 @@ class DeckManager:
         asyncio.set_event_loop(self.loop)
         self.loop.create_task(self._hw_supervisor())
         self.loop.run_forever()
+
+    def _init_small_window_background(self):
+        """
+        Replaces the D200 factory logo behind the clock/stats screen. The info screen shows the image
+        uploaded for its grid cell with the page, so a solid black (or custom) image removes the logo.
+        small_window_background: "" = solid black, "default" = keep the factory logo, otherwise an image path.
+        """
+        setting = self.small_window_background
+        if setting.lower() == "default":
+            return
+        try:
+            if setting:
+                path = setting if os.path.isabs(setting) else os.path.join(os.path.dirname(os.path.abspath(__file__)), setting)
+                with Image.open(path) as src:
+                    img = ImageOps.fit(src.convert("RGB"), self.SMALL_WINDOW_SIZE)
+            else:
+                img = Image.new("RGB", self.SMALL_WINDOW_SIZE, (0, 0, 0))
+            img.save(os.path.join(self.cache_dir, self.SMALL_WINDOW_BG_NAME))
+            self.active_buttons[self.SMALL_WINDOW_INDEX] = {'name': '', 'icon': self.SMALL_WINDOW_BG_NAME}
+        except Exception as e:
+            logging.error(f"DeckManager: Failed to prepare small window background '{setting}': {e}")
 
     def _connect_hw(self):
         from strmdck.device_manager import auto_connect

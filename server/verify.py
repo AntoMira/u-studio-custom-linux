@@ -720,6 +720,43 @@ def test_hardware_icon_cache():
 
     print("✅ Hardware icon cache cleanup verification passed successfully.")
 
+def test_small_window_background():
+    """
+    Validates the info screen background: black by default, a custom image is fit to 458x196,
+    and "default" keeps the factory logo (no image uploaded for the wide cell).
+    """
+    print("Testing small window background on DeckManager...")
+    try:
+        import strmdck.device_manager as dm
+    except ImportError:
+        print("⚠️ strmdck not installed in this interpreter (use venv/bin/python); skipping small window background test.")
+        return
+
+    import tempfile
+    original = dm.auto_connect
+    dm.auto_connect = lambda: None
+    try:
+        idx = DeckManager.SMALL_WINDOW_INDEX
+        m = DeckManager(simulator_mode=False, reconnect_seconds=1)
+        entry = m.active_buttons[idx]
+        assert entry and entry['icon'] == DeckManager.SMALL_WINDOW_BG_NAME, "Default must upload a background image"
+        img = Image.open(os.path.join(m.cache_dir, entry['icon']))
+        assert img.size == (458, 196) and img.getpixel((10, 10)) == (0, 0, 0), "Default background must be solid black 458x196"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = os.path.join(tmp, "bg.png")
+            Image.new("RGB", (100, 100), (10, 20, 30)).save(custom)
+            m2 = DeckManager(simulator_mode=False, reconnect_seconds=1, small_window_background=custom)
+            img2 = Image.open(os.path.join(m2.cache_dir, m2.active_buttons[idx]['icon']))
+            assert img2.size == (458, 196) and img2.getpixel((200, 100)) == (10, 20, 30), "Custom image must be fit to 458x196"
+
+        m3 = DeckManager(simulator_mode=False, reconnect_seconds=1, small_window_background="default")
+        assert m3.active_buttons[idx] is None if idx in m3.active_buttons else True, "'default' must keep the factory logo"
+    finally:
+        dm.auto_connect = original
+
+    print("✅ Small window background verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -745,6 +782,8 @@ def run_tests():
         test_hardware_reconnect()
         print("-"*60)
         test_hardware_icon_cache()
+        print("-"*60)
+        test_small_window_background()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

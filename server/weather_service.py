@@ -1,3 +1,4 @@
+import math
 import os
 import logging
 import time
@@ -10,7 +11,8 @@ class WeatherService:
     """
     Service to fetch weather data from OpenWeather API, with caching and fallback mock values.
     """
-    def __init__(self, api_key: str, city: str):
+    def __init__(self, api_key: str, city: str, timezone=None):
+        self.timezone = timezone  # tzinfo used to group forecasts by local date (None = system timezone)
         self.api_key = api_key.strip() if api_key else ""
         self.city = city.strip() if city else "Sao Paulo,BR"
         self._cache = None
@@ -98,7 +100,7 @@ class WeatherService:
         return self._mock_data()
 
     def _mock_data(self) -> dict:
-        today = datetime.now().date()
+        today = datetime.now(self.timezone).date()
         mock_days = [
             (18.0, 26.0, "clear", 0.05), (16.0, 22.0, "rain", 0.8), (15.0, 21.0, "clouds", 0.2),
             (14.0, 24.0, "clear", 0.0), (17.0, 29.0, "thunderstorm", 0.6),
@@ -107,6 +109,10 @@ class WeatherService:
             "weather": { "temp": 20.5, "pop": 0.35, "type": "clouds" },
             "weather_forecast": { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" },
             "weather_forecast+1": { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" },
+            "hourly": [
+                { "date": (datetime.now(self.timezone) + timedelta(hours=3 * i)).date().isoformat(), "temp": 21 + 7 * math.sin((i - 3) * math.pi / 4), "rain": max(0.0, 12 * math.sin((i - 5) * math.pi / 8)) if i < 16 else 0.0 }
+                for i in range(32)
+            ],
             "daily": [
                 { "date": (today + timedelta(days=i)).isoformat(), "min_temp": lo, "max_temp": hi, "type": t, "pop": pop }
                 for i, (lo, hi, t, pop) in enumerate(mock_days)
@@ -118,7 +124,7 @@ class WeatherService:
         Groups the 3-hour forecasts by logical calendar dates, extracts the daily temperature min/max,
         and determines the most significant weather condition for today and tomorrow.
         """
-        today_date = datetime.now().date()
+        today_date = datetime.now(self.timezone).date()
         tomorrow_date = today_date + timedelta(days=1)
         
         # Group items by their local date
@@ -127,7 +133,7 @@ class WeatherService:
             dt = item.get("dt")
             if not dt:
                 continue
-            item_date = datetime.fromtimestamp(dt).date()
+            item_date = datetime.fromtimestamp(dt, self.timezone).date()
             if item_date not in days_data:
                 days_data[item_date] = []
             days_data[item_date].append(item)
@@ -177,6 +183,12 @@ class WeatherService:
             parsed["weather_forecast+1"] = self._aggregate_day_records(tomorrow_records)
         else:
             parsed["weather_forecast+1"] = { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+
+        # 3-hour temperature and rain (mm) series for the weather graph
+        parsed["hourly"] = [
+            { "date": datetime.fromtimestamp(item["dt"], self.timezone).date().isoformat(), "temp": item.get("main", {}).get("temp", 0.0), "rain": (item.get("rain") or {}).get("3h", 0.0) }
+            for item in data.get("list", []) if item.get("dt")
+        ]
 
         # Daily summaries (today + following days available in the 5-day forecast)
         parsed["daily"] = []

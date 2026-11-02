@@ -96,7 +96,8 @@ class StreamDeckApp:
         self.openweather_city = os.getenv("OPENWEATHER_CITY", "Sao Paulo,BR")
         self.weather_service = WeatherService(
             api_key=self.openweather_api_key,
-            city=self.openweather_city
+            city=self.openweather_city,
+            timezone=self.timezone
         )
         self.mqtt_service = MqttService(
             broker=self.mqtt_config.get("broker", ""),
@@ -121,6 +122,7 @@ class StreamDeckApp:
         self.deck_mgr.register_wake_callback(self.reset_activity_timer)
 
         self._weather_panel_signature = None
+        self._weather_graph_signature = None
 
         # Keep track of active clock widgets
         self.clock_buttons = []
@@ -179,8 +181,8 @@ class StreamDeckApp:
                 index = btn.get("index")
                 if index is not None:
                     self.buttons_config[int(index)] = btn
-            if any(b.get("action_type") == "weather_panel" for b in self.buttons_config.values()) and self.small_window_mode != 2:
-                logging.info("StreamDeckApp: weather_panel configured; forcing small_window_mode=2 (background only).")
+            if any(b.get("action_type") in ("weather_panel", "weather_graph") for b in self.buttons_config.values()) and self.small_window_mode != 2:
+                logging.info("StreamDeckApp: weather_panel/weather_graph configured; forcing small_window_mode=2 (background only).")
                 self.small_window_mode = 2
             logging.info(f"StreamDeckApp: Successfully loaded {len(self.buttons_config)} button mappings.")
         except Exception as e:
@@ -269,6 +271,23 @@ class StreamDeckApp:
                 if signature != self._weather_panel_signature:
                     self._weather_panel_signature = signature
                     self.deck_mgr.update_weather_panel(current, today, upcoming)
+        elif device_type == "widget" and config.get("action_type") == "weather_graph":
+            # Wide info-screen graph: current conditions + 3-hour temperature bars.
+            weather_data = self.weather_service.get_weather_data()
+            current = weather_data.get("weather")
+            daily = weather_data.get("daily") or []
+            hourly = (weather_data.get("hourly") or [])[:32]
+            if current and daily and hourly:
+                today_iso = datetime.now(self.timezone).date().isoformat()
+                today = next((d for d in daily if d["date"] == today_iso), daily[0])
+                signature = (
+                    round(current["temp"]), round(current["pop"], 1), current["type"], today_iso,
+                    tuple((h["date"], round(h["temp"]), round(h.get("rain", 0), 1)) for h in hourly),
+                    round(today["min_temp"]), round(today["max_temp"]),
+                )
+                if signature != self._weather_graph_signature:
+                    self._weather_graph_signature = signature
+                    self.deck_mgr.update_weather_graph(current, today, hourly)
         elif device_type == "widget" and config.get("action_type") == "weather":
             # Current Weather Widget
             weather_data = self.weather_service.get_weather_data()
@@ -527,7 +546,7 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
-                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "weather_panel", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
+                    elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "weather_panel", "weather_graph", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
                 time.sleep(self.state_sync_interval)

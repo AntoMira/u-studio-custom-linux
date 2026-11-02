@@ -528,31 +528,23 @@ class DeckManager:
         draw.polygon([(x, y), (x - w, y + h * 0.6), (x + w, y + h * 0.6)], fill=color)
         draw.ellipse([x - w, y + h * 0.3, x + w, y + h], fill=color)
 
-    def render_weather_panel(self, current: dict, today: dict, days: list):
-        """
-        Renders the 458x196 weather panel: current conditions + today's range on the left,
-        followed by one column per upcoming day (weekday, icon, max/min with a range bar, rain chance).
-        current: {temp, pop, type}; today: {min_temp, max_temp}; days: [{date(ISO), min_temp, max_temp, type, pop}]
-        """
-        width, height = self.SMALL_WINDOW_SIZE
-        img = Image.new("RGB", (width, height), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
+    def _draw_rain_chance(self, draw, x, y, pop, right_aligned=False):
+        pct = int(round(pop * 100))
+        if pct < 30:
+            return
+        font = ImageFont.load_default(size=16)
+        label = f"{pct}%"
+        tw = draw.textlength(label, font=font)
+        total = 10 + 4 + tw
+        x0 = x - total if right_aligned else x - total / 2
+        self._draw_drop(draw, x0 + 5, y, (110, 175, 255), h=14)
+        draw.text((x0 + 14, y + 7), label, font=font, fill=(150, 200, 255), anchor="lm")
+
+    def _draw_weather_current(self, img, draw, current: dict, today: dict, left_w: int = 148) -> int:
+        """Draws the left 'AGORA' block shared by the weather panels and returns its width."""
+        height = self.SMALL_WINDOW_SIZE[1]
         f = lambda size: ImageFont.load_default(size=size)
         white = (255, 255, 255)
-
-        def rain_chance(x, y, pop, right_aligned=False):
-            pct = int(round(pop * 100))
-            if pct < 30:
-                return
-            label = f"{pct}%"
-            tw = draw.textlength(label, font=f(16))
-            total = 10 + 4 + tw
-            x0 = x - total if right_aligned else x - total / 2
-            self._draw_drop(draw, x0 + 5, y, (110, 175, 255), h=14)
-            draw.text((x0 + 14, y + 7), label, font=f(16), fill=(150, 200, 255), anchor="lm")
-
-        # --- Left block: current conditions ---
-        left_w = 148
         draw.text((10, 8), "AGORA", font=f(22), fill=white, anchor="lt")
         self._paste_weather_icon(img, left_w // 2, 62, current.get("type", "clear"), scale=1.8)
         cur_temp = current.get('temp', 0)
@@ -568,8 +560,23 @@ class DeckManager:
                 draw.text((x, 164), txt, font=fr, fill=col, anchor="lt")
                 x += draw.textlength(txt, font=fr)
         if current.get("pop", 0) >= 0.3:
-            rain_chance(left_w - 8, 8, current["pop"], right_aligned=True)
+            self._draw_rain_chance(draw, left_w - 8, 8, current["pop"], right_aligned=True)
         draw.line([left_w, 14, left_w, height - 14], fill=(55, 55, 62), width=2)
+        return left_w
+
+    def render_weather_panel(self, current: dict, today: dict, days: list):
+        """
+        Renders the 458x196 weather panel: current conditions + today's range on the left,
+        followed by one column per upcoming day (weekday, icon, max/min with a range bar, rain chance).
+        current: {temp, pop, type}; today: {min_temp, max_temp}; days: [{date(ISO), min_temp, max_temp, type, pop}]
+        """
+        width, height = self.SMALL_WINDOW_SIZE
+        img = Image.new("RGB", (width, height), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        f = lambda size: ImageFont.load_default(size=size)
+        white = (255, 255, 255)
+
+        left_w = self._draw_weather_current(img, draw, current, today)
 
         # --- Day columns ---
         days = days[:4]
@@ -587,7 +594,7 @@ class DeckManager:
             self._paste_weather_icon(img, cx, 62, day.get("type", "clear"), scale=1.0)
             draw.text((cx, 90), f"{int(round(day['max_temp']))}°", font=f(32), fill=self._soft_temp_color(day["max_temp"]), anchor="mt")
             draw.text((cx, 128), f"{int(round(day['min_temp']))}°", font=f(32), fill=self._soft_temp_color(day["min_temp"]), anchor="mt")
-            rain_chance(cx, 172, day.get("pop", 0))
+            self._draw_rain_chance(draw, cx, 172, day.get("pop", 0))
         return img
 
     def update_weather_panel(self, current: dict, today: dict, days: list):
@@ -600,6 +607,95 @@ class DeckManager:
                 img.save(os.path.join(self.output_sim_dir, "weather_panel.png"))
             except Exception as e:
                 logging.error(f"DeckManager (SIM): Failed to save weather panel: {e}")
+            return
+        self._store_hw_image(self.SMALL_WINDOW_INDEX, img)
+
+    WEATHER_GRAPH_MAX_RAIN_MM = 30.0  # rain per 3 h that fills the graph height (very heavy rain)
+
+    def render_weather_graph(self, current: dict, today: dict, hourly: list):
+        """
+        Renders the 458x196 weather graph: the same current-conditions block as the weather panel,
+        followed by one bar per 3-hour forecast (height = temperature on a 0-45 scale, color = temperature
+        scale). A dotted gray line marks each midnight.
+        hourly: [{date(ISO), temp, rain(mm per 3 h)}] in chronological order.
+        A translucent blue curve over the bars shows the rain, 0 to WEATHER_GRAPH_MAX_RAIN_MM.
+        """
+        width, height = self.SMALL_WINDOW_SIZE
+        img = Image.new("RGB", (width, height), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        left_w = self._draw_weather_current(img, draw, current, today)
+        if not hourly:
+            return img
+
+        x0, x1 = left_w + 12, width - 8
+        top, bottom = 30, height - 14
+        t_min, t_max = 0.0, 45.0
+        slot = (x1 - x0) / len(hourly)
+        bar_w = max(2, int(slot) - 2)
+        for i, item in enumerate(hourly):
+            sx = x0 + slot * i
+            temp = item["temp"]
+            frac = min(max((temp - t_min) / (t_max - t_min), 0.0), 1.0)
+            bar_h = max(2, int(round((bottom - top) * frac)))
+            bx = int(sx + (slot - bar_w) / 2)
+            draw.rectangle([bx, bottom - bar_h, bx + bar_w - 1, bottom], fill=self._soft_temp_color(temp))
+            if i > 0 and item["date"] != hourly[i - 1]["date"]:
+                lx = int(round(sx))
+                for y in range(top - 6, bottom + 6, 6):
+                    draw.line([lx, y, lx, y + 2], fill=(255, 255, 255), width=2)
+
+        self._draw_rain_curve(img, hourly, x0, slot, top, bottom)
+        draw = ImageDraw.Draw(img)
+
+        # Weekday label centered over each day's run of bars (skipped when the run is too narrow)
+        label_font = ImageFont.load_default(size=16)
+        start = 0
+        for i in range(1, len(hourly) + 1):
+            if i == len(hourly) or hourly[i]["date"] != hourly[start]["date"]:
+                try:
+                    wd = self.WEEKDAYS_PT[datetime.fromisoformat(hourly[start]["date"]).weekday()]
+                except Exception:
+                    wd = ""
+                seg_x0, seg_x1 = x0 + slot * start, x0 + slot * i
+                if wd and draw.textlength(wd, font=label_font) + 4 <= seg_x1 - seg_x0:
+                    draw.text(((seg_x0 + seg_x1) / 2, 4), wd, font=label_font, fill=(255, 255, 255), anchor="mt")
+                start = i
+        return img
+
+    def _draw_rain_curve(self, img, hourly: list, x0: float, slot: float, top: int, bottom: int):
+        """Draws the rain as a smooth translucent white area (with a solid edge) over the bars."""
+        if not any(h.get("rain", 0) > 0 for h in hourly):
+            return
+        rain_h = bottom - top
+        pts = [
+            (x0 + slot * (i + 0.5), bottom - rain_h * min(max(h.get("rain", 0.0) / self.WEATHER_GRAPH_MAX_RAIN_MM, 0.0), 1.0))
+            for i, h in enumerate(hourly)
+        ]
+        # Catmull-Rom spline through the points; y is clamped so the curve never dips below 0 mm
+        curve = []
+        steps = 8
+        for i in range(len(pts) - 1):
+            p0, p1, p2, p3 = pts[max(i - 1, 0)], pts[i], pts[i + 1], pts[min(i + 2, len(pts) - 1)]
+            for k in range(steps):
+                t = k / steps
+                t2, t3 = t * t, t * t * t
+                x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
+                y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+                curve.append((x, min(max(y, top), bottom)))
+        curve.append(pts[-1])
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        odraw = ImageDraw.Draw(overlay)
+        odraw.polygon(curve + [(curve[-1][0], bottom), (curve[0][0], bottom)], fill=(255, 255, 255, 120))
+        odraw.line(curve, fill=(255, 255, 255, 255), width=2)
+        img.paste(Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB"))
+
+    def update_weather_graph(self, current: dict, today: dict, hourly: list):
+        img = self.render_weather_graph(current, today, hourly)
+        if self.simulator_mode:
+            try:
+                img.save(os.path.join(self.output_sim_dir, "weather_graph.png"))
+            except Exception as e:
+                logging.error(f"DeckManager (SIM): Failed to save weather graph: {e}")
             return
         self._store_hw_image(self.SMALL_WINDOW_INDEX, img)
 

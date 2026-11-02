@@ -241,5 +241,5 @@ buttons:
 
   - index: 13        # Wide info screen (replaces the clock)
     device_type: "widget"
-    action_type: "weather_panel"
+    action_type: "weather_graph"
     label: "Clima"

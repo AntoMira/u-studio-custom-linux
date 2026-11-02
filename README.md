@@ -155,6 +155,9 @@ The Stream Deck features real-time weather widgets for current conditions (`acti
 ### Wide Weather Panel (`action_type: weather_panel`)
 The D200 info screen can be used as a wide display instead of the clock. Add a button with `index: 13` and `action_type: weather_panel` (`small_window_mode` is forced to `2`, background only). It shows the current temperature, rain chance and today's min/max on the left, and the next 4 days on the right (weekday, icon, max and min, rain chance when ≥ 30%). Temperatures follow the color scale below and icons are colored by condition (yellow sun, white clouds, blue-gray rain, etc.). It is only redrawn and re-uploaded when the data changes.
 
+### Wide Weather Graph (`action_type: weather_graph`)
+Alternative to `weather_panel` on the info screen (`index: 13`). The left block (current conditions) is identical; the right side shows one bar per 3-hour forecast (next ~4 days). Bar height is the temperature on a 0–45 °C scale and bar color follows the temperature color scale. A dotted white line marks each midnight, with the weekday written above each day. A translucent white curve over the bars shows the forecast rain in mm per 3 hours (0 to 30 mm, `WEATHER_GRAPH_MAX_RAIN_MM` in `deck_manager.py`). No numbers are drawn.
+
 ### 1. Dynamic Temperature Gradient Backgrounds
 When displaying weather forecasts, the button background dynamically interpolates a horizontal color gradient derived from the predicted **Minimum** (left) and **Maximum** (right) temperatures:
 

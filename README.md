@@ -129,8 +129,9 @@ keep_screen_on_hue_ids: "2, 5, 6"             # Comma-separated list of Hue Ligh
 
 ---
 
-## 👆 Button Debounce & Long Press (Lights / Plugs)
+## 👆 USB Reconnect, Button Debounce & Long Press (Lights / Plugs)
 
+- **USB auto-reconnect**: if the D200 is unplugged (or missing at startup), the service stays running, sleeps `hardware_reconnect_seconds` (default `10`) between attempts instead of looping, and resumes by itself once the device is back, re-sending the button page.
 - **Debounce**: `button_debounce_seconds` (default `0.35`) drops rapid repeated presses of the same button (contact bounce / double clicks).
 - **Long press**: buttons with `device_type: "light"` or `"plug"` and `action_type: "hue_toggle"` accept `long_press_off_seconds` and/or `long_press_on_seconds`. Holding the button for that long explicitly turns the device OFF / ON, firing as soon as the time is reached (no need to release).
 - **Protected direction**: a short press never performs a direction that has a long press configured. For example, with `long_press_off_seconds` set, a tap only turns the device ON and it must be held to turn it OFF, which avoids accidentally switching off a 3D printer mid-print. If both are set, short presses do nothing (use different times for each).

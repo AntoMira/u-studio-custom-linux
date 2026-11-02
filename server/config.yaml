@@ -55,6 +55,11 @@
 # button_debounce_seconds:
 #   Minimum time interval in seconds between consecutive presses of the same button to prevent double-clicks.
 #   Value: Positive float or integer (default: 0.35).
+#
+# hardware_reconnect_seconds:
+#   Wait time in seconds between USB reconnection attempts when the D200 is unplugged or not found.
+#   The service stays running and reconnects automatically once the device is back.
+#   Value: Positive float or integer (default: 10).
 # ==============================================================================
 
 font_size_label: 30     # Font size for the top label (default: 12)
@@ -69,6 +74,7 @@ screen_sleep_timeout: 300     # Inactivity timeout in seconds before sleep (defa
 keep_screen_on_pc_monitor: "192.168.31.101"  # PC IP to keep screen awake while online
 keep_screen_on_hue_ids: "2, 5, 6"               # Philips Hue Light IDs to keep screen awake while ON
 button_debounce_seconds: 0.35                   # Debounce interval in seconds to prevent double clicks (default: 0.35)
+hardware_reconnect_seconds: 10                  # Seconds between USB reconnect attempts when the D200 is missing (default: 10)
 
 # ==============================================================================
 # MQTT BROKER SETTINGS

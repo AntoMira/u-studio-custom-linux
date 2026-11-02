@@ -614,6 +614,75 @@ def test_long_press():
 
     print("✅ Long press logic verification passed successfully.")
 
+def test_hardware_reconnect():
+    """
+    Validates D200 reconnection on DeckManager (hardware mode with a fake USB device):
+    - A missing device is retried with a sleep between attempts (no busy loop).
+    - A device lost mid-session is dropped and reconnected when it reappears, re-sending the button page.
+    - Key events from the reconnected device still reach callbacks.
+    """
+    print("Testing D200 hardware reconnect logic on DeckManager...")
+    import asyncio
+    try:
+        import strmdck.device_manager as dm
+    except ImportError:
+        print("⚠️ strmdck not installed in this interpreter (use venv/bin/python); skipping hardware reconnect test.")
+        return
+
+    class FakeAction:
+        def __init__(self, index, pressed):
+            self.index, self.pressed = index, pressed
+
+    class FakeDevice:
+        def __init__(self, events, fail_after=True):
+            self.events, self.fail_after = events, fail_after
+            self.closed, self.pages = False, []
+        def set_label_style(self, *a, **k): pass
+        def set_small_window_mode(self, *a): pass
+        def restore_small_window(self): pass
+        def set_brightness(self, *a): pass
+        def keep_alive(self): pass
+        def set_buttons(self, buttons, update_only=False): self.pages.append(dict(buttons))
+        def close(self): self.closed = True
+        async def read_packet(self):
+            for ev in self.events:
+                await asyncio.sleep(0.05)
+                yield ev
+            if self.fail_after:
+                raise IOError("device unplugged")
+            while True:
+                await asyncio.sleep(0.05)
+
+    dev1 = FakeDevice([FakeAction(3, True)])
+    dev2 = FakeDevice([FakeAction(7, True)], fail_after=False)
+    sequence = [None, dev1, None, dev2]
+    calls = []
+
+    def fake_auto_connect():
+        calls.append(time.time())
+        return sequence.pop(0) if sequence else None
+
+    original = dm.auto_connect
+    dm.auto_connect = fake_auto_connect
+    try:
+        manager = DeckManager(simulator_mode=False, debounce_seconds=0.0, reconnect_seconds=1)
+        clicks = []
+        manager.register_callback(lambda idx: clicks.append(idx))
+        manager.active_buttons[0] = b"img"
+        time.sleep(4.5)
+    finally:
+        dm.auto_connect = original
+
+    assert clicks == [3, 7], f"Expected key events from both sessions, got {clicks}"
+    assert dev1.closed, "Lost device must be closed/dropped"
+    assert manager.deck is dev2, "Manager should be using the reconnected device"
+    assert dev2.pages and 0 in dev2.pages[0], "Button page must be re-sent after reconnect"
+    gaps = [b - a for a, b in zip(calls, calls[1:])]
+    assert all(g >= 0.9 for g in gaps), f"Reconnect attempts must sleep between tries, gaps={gaps}"
+    assert len(calls) == 4, f"Expected exactly 4 connect attempts, got {len(calls)}"
+
+    print("✅ D200 hardware reconnect verification passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -635,6 +704,8 @@ def run_tests():
         test_button_debounce()
         print("-"*60)
         test_long_press()
+        print("-"*60)
+        test_hardware_reconnect()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

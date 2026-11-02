@@ -67,7 +67,7 @@ class DeckManager:
     Manages communication with the Ulanzi D200 Stream Deck.
     Features a robust Simulator Mode that saves button screens as PNG images for visual verification.
     """
-    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35):
+    def __init__(self, simulator_mode: bool = False, font_size_label: int = 12, font_size_status: int = 10, margin_label: int = 10, margin_status: int = 25, small_window_mode: int = 0, debounce_seconds: float = 0.35, reconnect_seconds: float = 10.0):
         self.simulator_mode = simulator_mode
         self.has_hardware = not self.simulator_mode
         self.deck = None
@@ -81,6 +81,7 @@ class DeckManager:
         self.margin_status = margin_status
         self.small_window_mode = small_window_mode
         self.debounce_seconds = float(debounce_seconds)
+        self.reconnect_seconds = max(1.0, float(reconnect_seconds))
         self.last_press_time = {}
         # Long press: {button_index: {"on": seconds, "off": seconds}} and in-flight press state
         self.long_press_config = {}
@@ -130,30 +131,63 @@ class DeckManager:
 
     def _run_async_loop(self):
         asyncio.set_event_loop(self.loop)
-        
-        # Connect to hardware in loop context
-        from strmdck.device_manager import auto_connect
-        self.deck = auto_connect()
-        if not self.deck:
-            logging.error("DeckManager: Ulanzi D200 Stream Deck hardware not found on USB!")
-            os._exit(1)
-            
-        logging.info("DeckManager: Physical Ulanzi D200 Stream Deck connected successfully!")
-        
-        # Start small screen reset sequence task inside running event loop
-        self.loop.create_task(self._async_small_screen_reset())
-
-        # Start reading key packets
-        self.loop.create_task(self._hw_read_loop())
-        
-        # Start keep alive / small window updater
-        self.loop.create_task(self._hw_keep_alive_loop())
-        
-        # Schedule brightness set after loop starts running
-        self.loop.call_soon(self.deck.set_brightness, 80, True)
+        self.loop.create_task(self._hw_supervisor())
         self.loop.run_forever()
 
+    def _connect_hw(self):
+        from strmdck.device_manager import auto_connect
+        try:
+            return auto_connect()
+        except Exception as e:
+            logging.error(f"DeckManager: Error while connecting to USB hardware: {e}")
+            return None
+
+    async def _hw_supervisor(self):
+        """
+        Keeps the D200 connected: connects, serves key events until the device is lost, then
+        sleeps and retries. Sleeping between attempts keeps a missing device from burning CPU.
+        """
+        waiting_logged = False
+        while True:
+            deck = self._connect_hw()
+            if not deck:
+                if not waiting_logged:
+                    logging.warning(f"DeckManager: Ulanzi D200 not found on USB. Retrying every {self.reconnect_seconds:.0f}s...")
+                    waiting_logged = True
+                await asyncio.sleep(self.reconnect_seconds)
+                continue
+
+            waiting_logged = False
+            self.deck = deck
+            logging.info("DeckManager: Physical Ulanzi D200 Stream Deck connected successfully!")
+            keep_alive_task = None
+            try:
+                await self._async_small_screen_reset()
+                self.deck.set_brightness(80 if self.screen_on else 0, True)
+                if self.active_buttons and any(self.active_buttons.values()):
+                    await self._async_set_buttons(dict(self.active_buttons))
+                keep_alive_task = self.loop.create_task(self._hw_keep_alive_loop())
+                await self._hw_read_loop()
+            except Exception as e:
+                logging.error(f"DeckManager: Hardware session error: {e}")
+            finally:
+                if keep_alive_task:
+                    keep_alive_task.cancel()
+                self._drop_hw()
+
+            logging.warning(f"DeckManager: Lost connection to Ulanzi D200. Retrying in {self.reconnect_seconds:.0f}s...")
+            await asyncio.sleep(self.reconnect_seconds)
+
+    def _drop_hw(self):
+        deck, self.deck = self.deck, None
+        if deck:
+            try:
+                deck.close()
+            except Exception as e:
+                logging.debug(f"DeckManager: Error closing lost device: {e}")
+
     async def _hw_read_loop(self):
+        """Returns when the device stops delivering packets (unplugged or read error)."""
         try:
             async for action in self.deck.read_packet():
                 if action and hasattr(action, 'index'):
@@ -193,7 +227,11 @@ class DeckManager:
             # Force update_only=False to prevent D200 partial update bug that blanks other buttons
             update_only = False
             logging.info(f"DeckManager: Uploading page to D200 (update_only={update_only}, buttons={list(buttons.keys())})...")
-            self.deck.set_buttons(buttons, update_only=update_only)
+            deck = self.deck
+            if not deck:
+                logging.warning("DeckManager: D200 not connected; button page will be sent on reconnect.")
+                return
+            deck.set_buttons(buttons, update_only=update_only)
             self.first_update = False
         except Exception as e:
             logging.error(f"DeckManager: Failed to set hardware buttons: {e}")

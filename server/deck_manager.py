@@ -663,7 +663,7 @@ class DeckManager:
         return img
 
     def _draw_rain_curve(self, img, hourly: list, x0: float, slot: float, top: int, bottom: int):
-        """Draws the rain as a smooth translucent white area (with a solid edge) over the bars."""
+        """Draws the rain as a smooth translucent white area (with a solid edge only where it rains) over the bars."""
         if not any(h.get("rain", 0) > 0 for h in hourly):
             return
         rain_h = bottom - top
@@ -686,7 +686,10 @@ class DeckManager:
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         odraw = ImageDraw.Draw(overlay)
         odraw.polygon(curve + [(curve[-1][0], bottom), (curve[0][0], bottom)], fill=(255, 255, 255, 120))
-        odraw.line(curve, fill=(255, 255, 255, 255), width=2)
+        # Edge only where there is rain: skip the segments lying on the 0 mm baseline
+        for a, b in zip(curve, curve[1:]):
+            if a[1] < bottom - 0.5 or b[1] < bottom - 0.5:
+                odraw.line([a, b], fill=(255, 255, 255, 255), width=2)
         img.paste(Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB"))
 
     def update_weather_graph(self, current: dict, today: dict, hourly: list):

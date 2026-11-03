@@ -546,9 +546,9 @@ class DeckManager:
         f = lambda size: ImageFont.load_default(size=size)
         white = (255, 255, 255)
         draw.text((10, 8), "AGORA", font=f(22), fill=white, anchor="lt")
-        self._paste_weather_icon(img, left_w // 2, 62, current.get("type", "clear"), scale=1.8)
+        self._paste_weather_icon(img, left_w // 2, 58, current.get("type", "clear"), scale=1.3)
         cur_temp = current.get('temp', 0)
-        draw.text((left_w // 2, 108), f"{int(round(cur_temp))}°", font=f(54), fill=self._soft_temp_color(cur_temp), anchor="mt")
+        draw.text((left_w // 2, 96), f"{int(round(cur_temp))}°", font=f(54), fill=self._soft_temp_color(cur_temp), anchor="mt")
         if today:
             lo_t, hi_t = today['min_temp'], today['max_temp']
             lo_s, hi_s = f"{int(round(lo_t))}°", f"{int(round(hi_t))}°"
@@ -557,11 +557,11 @@ class DeckManager:
             total = draw.textlength(lo_s, font=fr) + draw.textlength(sep, font=fr) + draw.textlength(hi_s, font=fr)
             x = left_w / 2 - total / 2
             for txt, col in ((lo_s, self._soft_temp_color(lo_t)), (sep, white), (hi_s, self._soft_temp_color(hi_t))):
-                draw.text((x, 164), txt, font=fr, fill=col, anchor="lt")
+                draw.text((x, 150), txt, font=fr, fill=col, anchor="lt")
                 x += draw.textlength(txt, font=fr)
         if current.get("pop", 0) >= 0.3:
             self._draw_rain_chance(draw, left_w - 8, 8, current["pop"], right_aligned=True)
-        draw.line([left_w, 14, left_w, height - 14], fill=(55, 55, 62), width=2)
+        draw.line([left_w, 14, left_w, height - 23], fill=(55, 55, 62), width=2)
         return left_w
 
     def render_weather_panel(self, current: dict, today: dict, days: list):
@@ -591,10 +591,10 @@ class DeckManager:
             except Exception:
                 wd = "---"
             draw.text((cx, 8), wd, font=f(24), fill=white, anchor="mt")
-            self._paste_weather_icon(img, cx, 62, day.get("type", "clear"), scale=1.0)
-            draw.text((cx, 90), f"{int(round(day['max_temp']))}°", font=f(32), fill=self._soft_temp_color(day["max_temp"]), anchor="mt")
-            draw.text((cx, 128), f"{int(round(day['min_temp']))}°", font=f(32), fill=self._soft_temp_color(day["min_temp"]), anchor="mt")
-            self._draw_rain_chance(draw, cx, 172, day.get("pop", 0))
+            self._paste_weather_icon(img, cx, 56, day.get("type", "clear"), scale=1.0)
+            draw.text((cx, 82), f"{int(round(day['max_temp']))}°", font=f(32), fill=self._soft_temp_color(day["max_temp"]), anchor="mt")
+            draw.text((cx, 118), f"{int(round(day['min_temp']))}°", font=f(32), fill=self._soft_temp_color(day["min_temp"]), anchor="mt")
+            self._draw_rain_chance(draw, cx, 158, day.get("pop", 0))
         return img
 
     def update_weather_panel(self, current: dict, today: dict, days: list):
@@ -628,7 +628,7 @@ class DeckManager:
             return img
 
         x0, x1 = left_w + 12, width - 8
-        top, bottom = 30, height - 14
+        top, bottom = 30, height - 25
         t_min, t_max = 0.0, 45.0
         slot = (x1 - x0) / len(hourly)
         bar_w = max(2, int(slot) - 2)
@@ -641,7 +641,7 @@ class DeckManager:
             draw.rectangle([bx, bottom - bar_h, bx + bar_w - 1, bottom], fill=self._soft_temp_color(temp))
             if i > 0 and item["date"] != hourly[i - 1]["date"]:
                 lx = int(round(sx))
-                for y in range(top - 6, bottom + 6, 6):
+                for y in range(top - 6, bottom, 6):
                     draw.line([lx, y, lx, y + 2], fill=(255, 255, 255), width=2)
 
         self._draw_rain_curve(img, hourly, x0, slot, top, bottom)

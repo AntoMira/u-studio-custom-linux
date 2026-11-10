@@ -52,6 +52,27 @@ class WeatherService:
             return "clouds", 1
         return "clear", 0
 
+    def display_type(self, current: dict, now=None) -> str:
+        """
+        Weather type to draw for the current conditions: a clear sky after sunset (or before
+        sunrise) becomes "clear_night" so the widgets show a moon instead of a sun.
+        """
+        w_type = current.get("type", "clear")
+        if w_type != "clear":
+            return w_type
+        now = now or datetime.now(self.timezone)
+        # Sunrise/sunset come from the API as unix timestamps; compare only the local time of day
+        # so a cached value from a previous day still works. Mock mode falls back to 06:00-18:00.
+        def tod(ts, default):
+            if not ts:
+                return default
+            t = datetime.fromtimestamp(ts, self.timezone)
+            return t.hour * 3600 + t.minute * 60 + t.second
+        sunrise = tod(current.get("sunrise"), 6 * 3600)
+        sunset = tod(current.get("sunset"), 18 * 3600)
+        now_s = now.hour * 3600 + now.minute * 60 + now.second
+        return "clear" if sunrise <= now_s < sunset else "clear_night"
+
     def get_weather_data(self) -> dict:
         """
         Returns parsed weather data for today ('weather') and tomorrow ('weather+1').
@@ -166,10 +187,13 @@ class WeatherService:
                 w_id = w_list[0].get("id", 800)
                 current_type, _ = self.get_weather_type_and_priority(w_id)
                 
+        city = data.get("city", {})
         parsed["weather"] = {
             "temp": current_temp,
             "pop": current_pop,
-            "type": current_type
+            "type": current_type,
+            "sunrise": city.get("sunrise"),
+            "sunset": city.get("sunset"),
         }
         
         # Parse today's weather forecast

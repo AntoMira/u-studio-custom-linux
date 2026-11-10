@@ -258,6 +258,8 @@ class StreamDeckApp:
             # to the D200) when the underlying data changes.
             weather_data = self.weather_service.get_weather_data()
             current = weather_data.get("weather")
+            if current:
+                current = {**current, "type": self.weather_service.display_type(current)}
             daily = weather_data.get("daily") or []
             if current and daily:
                 today_iso = datetime.now(self.timezone).date().isoformat()
@@ -275,6 +277,8 @@ class StreamDeckApp:
             # Wide info-screen graph: current conditions + 3-hour temperature bars.
             weather_data = self.weather_service.get_weather_data()
             current = weather_data.get("weather")
+            if current:
+                current = {**current, "type": self.weather_service.display_type(current)}
             daily = weather_data.get("daily") or []
             hourly = (weather_data.get("hourly") or [])[:32]
             if current and daily and hourly:
@@ -295,7 +299,7 @@ class StreamDeckApp:
             if current_data:
                 temp = current_data["temp"]
                 pop = current_data["pop"]
-                w_type = current_data["type"]
+                w_type = self.weather_service.display_type(current_data)
                 
                 # Format: "Temp° | POP%" (e.g. 21° | 40%)
                 pop_pct = int(round(pop * 100))

@@ -449,6 +449,21 @@ class DeckManager:
                 x2 = center_x + (sun_r + 4 + ray_len) * math.cos(rad)
                 y2 = center_y + (sun_r + 4 + ray_len) * math.sin(rad)
                 draw.line([x1, y1, x2, y2], fill=fg_color, width=2)
+        elif weather_type == "clear_night":
+            # Crescent moon: a disc with an offset disc carved out, drawn through a mask so it
+            # works on both transparent icon canvases and solid button backgrounds
+            moon_r = 20
+            mask = Image.new("L", (2 * moon_r + 1, 2 * moon_r + 1), 0)
+            mdraw = ImageDraw.Draw(mask)
+            mdraw.ellipse([0, 0, 2 * moon_r, 2 * moon_r], fill=255)
+            cut_x, cut_y, cut_r = moon_r + 11, moon_r - 8, 17
+            mdraw.ellipse([cut_x - cut_r, cut_y - cut_r, cut_x + cut_r, cut_y + cut_r], fill=0)
+            mx, my = center_x - 4, center_y + 2
+            draw.bitmap((mx - moon_r, my - moon_r), mask, fill=fg_color)
+            # Two small sparkling stars in the carved-out side
+            for sx, sy, s in ((center_x + 17, center_y - 16, 5), (center_x + 22, center_y + 2, 3)):
+                draw.line([sx - s, sy, sx + s, sy], fill=accent, width=2)
+                draw.line([sx, sy - s, sx, sy + s], fill=accent, width=2)
         elif weather_type == "clouds":
             # Fluffy Cloud shape
             draw.ellipse([center_x - 22, center_y - 5, center_x - 5, center_y + 12], fill=fg_color)
@@ -496,6 +511,7 @@ class DeckManager:
     # weather type -> (main color, accent for drops / bolt / flakes)
     WEATHER_ICON_COLORS = {
         "clear": ((255, 205, 50), None),
+        "clear_night": ((235, 225, 175), (255, 240, 190)),
         "clouds": ((245, 245, 250), None),
         "rain": ((150, 165, 190), (80, 170, 255)),
         "thunderstorm": ((125, 130, 155), (255, 215, 60)),

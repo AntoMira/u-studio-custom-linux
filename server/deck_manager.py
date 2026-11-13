@@ -6,6 +6,12 @@ import asyncio
 from datetime import datetime
 import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import unicodedata
+from flight_service import compass_point as compass_point_pt
+
+def strip_accents(text: str) -> str:
+    """The bundled Pillow font has no accented glyphs: 'Aviões' -> 'Avioes'."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c))
 
 # Set up logging format
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -717,6 +723,253 @@ class DeckManager:
                 logging.error(f"DeckManager (SIM): Failed to save weather graph: {e}")
             return
         self._store_hw_image(self.SMALL_WINDOW_INDEX, img)
+
+    # ------------------------------------------------------------------ flight radar
+    # airline short name -> accent color of the top bar
+    FLIGHT_AIRLINE_COLORS = {
+        "LATAM": (232, 17, 91), "LATAM CARGO": (232, 17, 91), "GOL": (255, 112, 32),
+        "AZUL": (0, 110, 215), "AZUL CONECTA": (0, 110, 215), "PASSAREDO": (230, 160, 0),
+        "VOEPASS": (230, 160, 0), "FAB": (60, 140, 60),
+    }
+    FLIGHT_SKY = (8, 22, 44)
+
+    @staticmethod
+    def _flight_icon(is_heli: bool, size: int, color=(255, 255, 255)):
+        """Top view of an airplane (or helicopter) pointing up, on a transparent square."""
+        s = 256
+        icon = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        d = ImageDraw.Draw(icon)
+        c = s // 2
+        if is_heli:
+            d.ellipse([c - 34, c - 62, c + 34, c + 30], fill=color)                    # cabin
+            d.rectangle([c - 9, c + 20, c + 9, c + 112], fill=color)                    # tail boom
+            d.rectangle([c - 34, c + 96, c + 34, c + 110], fill=color)                  # tail stabilizer
+            for ang in (45, 135):                                                        # main rotor
+                a = math.radians(ang)
+                dx, dy = math.cos(a) * 118, math.sin(a) * 118
+                d.line([c - dx, c - 16 - dy, c + dx, c - 16 + dy], fill=color, width=14)
+            d.ellipse([c - 16, c - 32, c + 16, c], fill=color)
+        else:
+            d.rounded_rectangle([c - 17, c - 118, c + 17, c + 104], radius=17, fill=color)  # fuselage
+            d.polygon([(c - 12, c - 30), (c - 124, c + 24), (c - 124, c + 44), (c - 12, c + 18),
+                       (c + 12, c + 18), (c + 124, c + 44), (c + 124, c + 24), (c + 12, c - 30)], fill=color)  # wings
+            d.polygon([(c - 10, c + 70), (c - 52, c + 100), (c - 52, c + 114), (c - 10, c + 98),
+                       (c + 10, c + 98), (c + 52, c + 114), (c + 52, c + 100), (c + 10, c + 70)], fill=color)  # tail
+        return icon.resize((size, size), Image.LANCZOS)
+
+    def _paste_rotated_icon(self, img, cx, cy, is_heli, size, angle, color=(255, 255, 255)):
+        icon = self._flight_icon(is_heli, size, color)
+        if angle:
+            icon = icon.rotate(-angle, resample=Image.BICUBIC)  # PIL rotates counter-clockwise
+        img.paste(icon, (int(cx - size / 2), int(cy - size / 2)), icon)
+
+    @staticmethod
+    def _fit_font(draw, text, max_w, size, min_size=14):
+        while size > min_size:
+            font = ImageFont.load_default(size=size)
+            if draw.textlength(strip_accents(text), font=font) <= max_w:
+                return font
+            size -= 2
+        return ImageFont.load_default(size=min_size)
+
+    @staticmethod
+    def _draw_centered(draw, y, text, font, fill=(255, 255, 255), cx=98):
+        text = strip_accents(text)
+        draw.text((cx - draw.textlength(text, font=font) / 2, y), text, fill=fill, font=font)
+
+    @staticmethod
+    def _draw_vertical_arrow(draw, x, y, up: bool, color, h=12):
+        if up:
+            draw.polygon([(x, y), (x - h * 0.6, y + h), (x + h * 0.6, y + h)], fill=color)
+        else:
+            draw.polygon([(x, y + h), (x - h * 0.6, y), (x + h * 0.6, y)], fill=color)
+
+    @staticmethod
+    def _fmt_km(km: float) -> str:
+        return f"{km:.1f}".replace(".", ",") + " km" if km < 10 else f"{km:.0f} km"
+
+    def _draw_flight_dots(self, draw, idx, total, y=184):
+        if total <= 1:
+            return
+        shown = min(total, 7)
+        gap = 12
+        x0 = 98 - (shown - 1) * gap / 2
+        for i in range(shown):
+            r = 3.5 if i == idx % shown else 2.5
+            fill = (255, 255, 255) if i == idx % shown else (110, 120, 140)
+            draw.ellipse([x0 + i * gap - r, y - r, x0 + i * gap + r, y + r], fill=fill)
+
+    FLIGHT_PROJECTION_SECONDS = 120  # length of the dashed "where it is going" line
+
+    @staticmethod
+    def _draw_clipped_line(draw, p0, p1, center, radius, fill, width=2, dash=None):
+        """Draws p0->p1 only where it lies inside the circle, optionally dashed (on_px, off_px)."""
+        (x0, y0), (x1, y1) = p0, p1
+        length = math.hypot(x1 - x0, y1 - y0)
+        steps = max(1, int(length / 1.5))
+        run = []
+        period = sum(dash) if dash else 0
+
+        def flush():
+            if len(run) >= 2:
+                draw.line(run, fill=fill, width=width)
+            run.clear()
+
+        for i in range(steps + 1):
+            t = i / steps
+            x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+            inside = math.hypot(x - center[0], y - center[1]) <= radius
+            on = not dash or (t * length) % period < dash[0]
+            if inside and on:
+                run.append((x, y))
+            else:
+                flush()
+        flush()
+
+    def render_flight_button(self, flight: dict, page: int, idx: int = 0, total: int = 1,
+                             facing: float = 0.0, max_distance_km: float = 5.0):
+        """
+        Renders one 196x196 flight screen.
+        page 0: who it is (airline/flight number or registration, aircraft type, route)
+        page 1: where it is (mini radar oriented to the direction the deck faces, distance, altitude, speed)
+        """
+        w = h = 196
+        emergency = flight.get("emergency")
+        img = Image.new("RGB", (w, h), (90, 0, 0) if emergency else self.FLIGHT_SKY)
+        draw = ImageDraw.Draw(img)
+        white, grey = (255, 255, 255), (170, 182, 200)
+        is_heli = flight.get("is_heli")
+
+        airline = flight.get("airline") or (flight.get("airline_code") if flight.get("is_airline") else None)
+        title = airline or ("HELICOPTERO" if is_heli else "AERONAVE")
+        accent = self.FLIGHT_AIRLINE_COLORS.get(airline or "", (70, 90, 120))
+        main = flight.get("flight_number") or flight.get("registration") or flight.get("callsign") or flight.get("hex", "").upper()
+
+        if page == 0:
+            if emergency:
+                title, accent = f"EMERG. {flight.get('squawk', '')}".strip(), (220, 30, 30)
+            draw.rectangle([0, 0, w, 40], fill=accent)
+            self._draw_centered(draw, 8, title, self._fit_font(draw, title, 184, 26), white)
+
+            self._draw_centered(draw, 50, main, self._fit_font(draw, main, 184, 46), white)
+
+            type_code = flight.get("type") or "?"
+            font_t = ImageFont.load_default(size=22)
+            tw = draw.textlength(type_code, font=font_t)
+            x0 = 98 - (tw + 30) / 2
+            self._paste_rotated_icon(img, x0 + 11, 117, is_heli, 24, 45 if not is_heli else 0, grey)
+            draw.text((x0 + 30, 105), type_code, fill=grey, font=font_t)
+
+            route = flight.get("route") or {}
+            if route.get("origin") and route.get("destination"):
+                font_r = ImageFont.load_default(size=28)
+                o, d_ = route["origin"], route["destination"]
+                ow, dw = draw.textlength(o, font=font_r), draw.textlength(d_, font=font_r)
+                gap = 34
+                x = 98 - (ow + gap + dw) / 2
+                draw.text((x, 138), o, fill=white, font=font_r)
+                ax = x + ow + 6
+                draw.line([ax, 153, ax + gap - 14, 153], fill=white, width=3)
+                draw.polygon([(ax + gap - 12, 153), (ax + gap - 20, 147), (ax + gap - 20, 159)], fill=white)
+                draw.text((x + ow + gap, 138), d_, fill=white, font=font_r)
+            else:
+                sub = flight.get("registration") if flight.get("flight_number") else flight.get("callsign")
+                if sub and sub.replace("-", "") != main.replace("-", ""):
+                    self._draw_centered(draw, 140, sub, ImageFont.load_default(size=24), white)
+        else:
+            # slim bar with the same airline color + who it is, linking this screen to the first one
+            tag = f"{airline} {main}" if airline else ("HELI " if is_heli else "") + main
+            if emergency:
+                accent = (220, 30, 30)
+            draw.rectangle([0, 0, w, 24], fill=accent)
+            self._draw_centered(draw, 3, tag, self._fit_font(draw, tag, 184, 18, min_size=12), white)
+
+            dist = flight.get("distance_km", 0.0)
+            bearing = flight.get("bearing", 0.0)
+            top = f"{self._fmt_km(dist)}  {compass_point_pt(bearing)}"
+            self._draw_centered(draw, 28, top, self._fit_font(draw, top, 184, 22), white)
+
+            # mini radar: center = you, up = direction the deck faces
+            cx, cy, r = 98, 97, 40
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(60, 80, 110), width=2)
+            draw.ellipse([cx - r / 2, cy - r / 2, cx + r / 2, cy + r / 2], outline=(40, 56, 80), width=1)
+            draw.polygon([(cx, cy - r - 2), (cx - 6, cy - r + 8), (cx + 6, cy - r + 8)], fill=(110, 130, 160))  # "ahead" tick
+            # north marker on the ring
+            na = math.radians(-facing)
+            nx, ny = cx + math.sin(na) * r, cy - math.cos(na) * r
+            font_n = ImageFont.load_default(size=13)
+            draw.ellipse([nx - 8, ny - 8, nx + 8, ny + 8], fill=self.FLIGHT_SKY if not emergency else (90, 0, 0), outline=(110, 130, 160))
+            draw.text((nx - draw.textlength("N", font=font_n) / 2, ny - 8), "N", fill=(200, 210, 230), font=font_n)
+            draw.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=(80, 200, 120))  # you
+            scale = (r - 4) / (max_distance_km or 1.0)  # px per km
+
+            def to_px(d_km, brg):
+                a = math.radians(brg - facing)
+                return cx + math.sin(a) * d_km * scale, cy - math.cos(a) * d_km * scale
+
+            px, py = to_px(dist, bearing)
+            bg = (90, 0, 0) if emergency else self.FLIGHT_SKY
+            trail_color = (255, 215, 64)
+            # where it has been: solid line fading out towards the oldest point
+            pts = [to_px(d_, b_) for d_, b_ in (flight.get("trail") or [])] + [(px, py)]
+            n = len(pts) - 1
+            for i in range(n):
+                k = 0.3 + 0.6 * (i + 1) / n
+                col = tuple(int(bg[c] + (trail_color[c] - bg[c]) * k) for c in range(3))
+                self._draw_clipped_line(draw, pts[i], pts[i + 1], (cx, cy), r - 1, col, 3)
+            # where it is going: dashed line, PROJECTION_SECONDS ahead at the current track and speed
+            track = flight.get("track")
+            spd = flight.get("speed_kmh")
+            if track is not None and spd:
+                ahead_km = spd * self.FLIGHT_PROJECTION_SECONDS / 3600.0
+                a = math.radians(track - facing)
+                ux, uy = math.sin(a), -math.cos(a)
+                start = (px + ux * 12, py + uy * 12)  # begin past the nose of the icon
+                end = (px + ux * (12 + ahead_km * scale), py + uy * (12 + ahead_km * scale))
+                self._draw_clipped_line(draw, start, end, (cx, cy), r - 1, (230, 235, 245), 2, dash=(4, 4))
+            heading = ((track if track is not None else bearing) - facing) % 360
+            self._paste_rotated_icon(img, px, py, is_heli, 24, heading if not is_heli else 0, (255, 215, 64))
+
+            # altitude (with climb/descent arrow) and speed
+            font_b = ImageFont.load_default(size=22)
+            alt = flight.get("altitude_m")
+            alt_txt = "SOLO" if flight.get("on_ground") else (f"{int(round(alt / 10.0) * 10):,} m".replace(",", ".") if alt is not None else "-- m")
+            spd = flight.get("speed_kmh")
+            spd_txt = f"{int(round(spd))} km/h" if spd is not None else ""
+            vr = flight.get("vertical_rate") or 0
+            arrow = abs(vr) >= 300
+            aw = draw.textlength(alt_txt, font=font_b) + (16 if arrow else 0)
+            x = 98 - aw / 2
+            draw.text((x, 143), alt_txt, fill=white, font=font_b)
+            if arrow:
+                self._draw_vertical_arrow(draw, x + aw - 6, 149, vr > 0, (80, 200, 120) if vr > 0 else (255, 160, 60))
+            if spd_txt:
+                self._draw_centered(draw, 168, spd_txt, ImageFont.load_default(size=15), grey)
+
+        self._draw_flight_dots(draw, idx, total, y=190 if page == 1 else 184)
+        return img
+
+    def render_flight_idle(self, label: str = "Radar", status: str = "SEM VOOS"):
+        """Idle screen: a big airplane drawing when nothing is inside the radius."""
+        w = h = 196
+        img = Image.new("RGB", (w, h), self.FLIGHT_SKY)
+        draw = ImageDraw.Draw(img)
+        self._paste_rotated_icon(img, 98, 92, False, 92, 45, (235, 240, 250))
+        font_l = ImageFont.load_default(size=self.font_size_label)
+        self._draw_centered(draw, self.margin_label, label, font_l)
+        font_s = self._fit_font(draw, status, 184, min(self.font_size_status, 24))
+        self._draw_centered(draw, h - 40, status, font_s, (170, 182, 200))
+        return img
+
+    def show_button_image(self, index: int, img, sim_name: str = None):
+        """Shows an already rendered 196x196 image on a key (or saves it in Simulator Mode)."""
+        if self.simulator_mode:
+            try:
+                img.save(os.path.join(self.output_sim_dir, sim_name or f"button_{index}.png"))
+            except Exception as e:
+                logging.error(f"DeckManager (SIM): Failed to save button {index} image: {e}")
+            return
+        self._store_hw_image(index, img)
 
     def update_button(self, index: int, label: str, device_type: str, is_on: bool, brightness: int = None, icon_path: str = None, text_override: str = None, font_size_label: int = None, font_size_status: int = None, margin_label: int = None, margin_status: int = None, reachable: bool = True, weather_type: str = None, min_temp: float = None, max_temp: float = None, cpu_pct: float = None, mem_pct: float = None, temp_val: float = None, col_labels: tuple = None, center_text: str = None, power_val: float = None, max_power: float = 1000.0):
         """

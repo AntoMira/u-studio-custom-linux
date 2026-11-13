@@ -820,6 +820,60 @@ def test_weather_panel():
 
     print("✅ Weather panel verification passed successfully.")
 
+def test_flight_radar():
+    """
+    Validates the flight radar: ADS-B normalization/filtering, the 2-screens-per-flight rotation
+    with the max display time, and the 196x196 renders.
+    """
+    print("Testing flight radar widget...")
+    from flight_service import FlightService, FlightRotation, compass_point
+    svc = FlightService(-23.55, -46.63, max_distance_km=5)
+    near = {"hex": "a1", "flight": "TAM3538 ", "r": "PS-LHF", "t": "A320", "category": "A3",
+            "alt_baro": 8000, "gs": 240, "track": 164, "baro_rate": -1200, "lat": -23.53, "lon": -46.60}
+    heli = {"hex": "a2", "flight": "PSEII", "r": "PS-EII", "t": "AS50", "category": "A7",
+            "alt_baro": 2900, "gs": 100, "track": 140, "lat": -23.56, "lon": -46.63}
+    far = dict(near, hex="a3", lat=-23.80)
+    ground = dict(near, hex="a4", alt_baro="ground")
+    f = svc.normalize(near)
+    assert f and f["airline"] == "LATAM" and f["flight_number"] == "3538" and not f["is_heli"]
+    assert 3.0 < f["distance_km"] < 4.5 and compass_point(f["bearing"]) == "NE", f
+    assert abs(f["altitude_m"] - 2438.4) < 0.1 and abs(f["speed_kmh"] - 444.48) < 0.1
+    h = svc.normalize(heli)
+    assert h["is_heli"] and not h["is_airline"] and h["airline"] is None
+    assert svc.normalize(far) is None and svc.normalize(ground) is None
+
+    rot = FlightRotation(rotate_seconds=5, max_display_seconds=180)
+    assert rot.current(now=0) is None
+    rot.update([f, h], now=100)
+    seen = [rot.current(now=100 + t)[:2] for t in (0, 5, 10, 15, 20)]
+    keys = [(fl["hex"], page) for fl, page in seen]
+    assert keys == [("a2", 0), ("a2", 1), ("a1", 0), ("a1", 1), ("a2", 0)], keys  # closest first, 2 pages each
+    rot.update([f, h], now=150)
+    assert rot.current(now=290) is None and rot.hidden_count(now=290) == 2  # both past 180 s
+    rot.update([f], now=300)   # heli left the radius ...
+    rot.update([f, h], now=310)  # ... and came back: shown again, the airliner stays hidden
+    cur = rot.current(now=311)
+    assert cur and cur[0]["hex"] == "a2" and cur[3] == 1
+    trail_rot = FlightRotation()
+    f1 = svc.normalize(near)
+    f2 = svc.normalize(dict(near, lat=-23.535))
+    trail_rot.update([f1], now=0)
+    trail_rot.update([f2], now=15)
+    assert f1["trail"] == [] and f2["trail"] == [(f1["distance_km"], f1["bearing"])], f2["trail"]
+    trail_rot.update([], now=30)
+    assert "a1" not in trail_rot.trails  # trail dropped once the flight leaves
+    unlimited = FlightRotation(rotate_seconds=5, max_display_seconds=0)
+    unlimited.update([f], now=0)
+    assert unlimited.current(now=3600) is not None  # 0 = shown while inside the radius
+
+    manager = DeckManager(simulator_mode=True)
+    f["route"] = {"origin": "GRU", "destination": "POA"}
+    for page in (0, 1):
+        img = manager.render_flight_button(f2, page, 0, 2, facing=270)
+        assert img.size == (196, 196)
+    assert manager.render_flight_idle("Aviões", "SEM VOOS").size == (196, 196)
+    print("✅ Flight radar validation passed successfully.")
+
 def run_tests():
     print("="*60)
     print("          STARTING AUTOMATED VERIFICATION SUITE")
@@ -849,6 +903,8 @@ def run_tests():
         test_small_window_background()
         print("-"*60)
         test_weather_panel()
+        print("-"*60)
+        test_flight_radar()
         print("="*60)
         print("🎉 ALL VERIFICATION SUITE CHECKS COMPLETED SUCCESSFULLY!")
         print("="*60)

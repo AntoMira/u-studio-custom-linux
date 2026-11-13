@@ -20,6 +20,7 @@ except ImportError:
 from hue_controller import HueController
 from deck_manager import DeckManager
 from weather_service import WeatherService
+from flight_service import FlightService, FlightRotation
 from mqtt_service import MqttService
 
 # Configure logging
@@ -123,6 +124,16 @@ class StreamDeckApp:
 
         self._weather_panel_signature = None
         self._weather_graph_signature = None
+
+        # Flight radar widget (action_type: flight_radar), set up in start()
+        self.flight_radar_index = None
+        self.flight_service = None
+        self.flight_rotation = None
+        self.flight_lock = threading.Lock()
+        self.flight_refresh = threading.Event()
+        self.flight_status = "SEM VOOS"
+        self.flight_failures = 0
+        self._flight_signature = None
 
         # Keep track of active clock widgets
         self.clock_buttons = []
@@ -390,6 +401,8 @@ class StreamDeckApp:
                     text_override="WAITING...",
                     max_power=max_power
                 )
+        elif device_type == "widget" and config.get("action_type") == "flight_radar":
+            self.render_flight_radar(force=True)
         elif device_type == "widget" and config.get("action_type") == "pc_monitor":
             self.deck_mgr.update_button(
                 index=index,
@@ -479,6 +492,9 @@ class StreamDeckApp:
                         self.update_button_state(w_idx)
                         
             threading.Thread(target=do_refresh, daemon=True).start()
+        elif action_type == "flight_radar":
+            logging.info(f"StreamDeckApp: Flight radar button {index} pressed. Refreshing now...")
+            self.flight_refresh.set()
         else:
             logging.warning(f"StreamDeckApp: Action type '{action_type}' is not supported or missing target.")
 
@@ -558,6 +574,102 @@ class StreamDeckApp:
                 logging.error(f"StreamDeckApp: Error in State Sync Daemon loop: {e}")
                 time.sleep(self.state_sync_interval)
 
+    # ------------------------------------------------------------------ flight radar
+    def setup_flight_radar(self):
+        """
+        Configures the first flight_radar button. The home position comes from FLIGHT_RADAR_LATITUDE /
+        FLIGHT_RADAR_LONGITUDE in .env (kept out of config.yaml), or the button's latitude/longitude.
+        """
+        for index, config in sorted(self.buttons_config.items()):
+            if config.get("action_type") != "flight_radar":
+                continue
+            if self.flight_radar_index is not None:
+                logging.warning(f"StreamDeckApp: Only one flight_radar button is supported; ignoring button {index}.")
+                continue
+            self.flight_radar_index = index
+            lat = os.getenv("FLIGHT_RADAR_LATITUDE", "").strip() or config.get("latitude")
+            lon = os.getenv("FLIGHT_RADAR_LONGITUDE", "").strip() or config.get("longitude")
+            self.flight_rotation = FlightRotation(
+                rotate_seconds=float(config.get("rotate_seconds", 5)),
+                max_display_seconds=float(config.get("max_display_seconds", 0)),
+            )
+            try:
+                lat, lon = float(lat), float(lon)
+            except (TypeError, ValueError):
+                logging.error("StreamDeckApp: flight_radar needs FLIGHT_RADAR_LATITUDE/FLIGHT_RADAR_LONGITUDE in .env (or latitude/longitude on the button).")
+                self.flight_status = "SEM LOCAL"
+                continue
+            self.flight_service = FlightService(
+                latitude=lat,
+                longitude=lon,
+                max_distance_km=float(config.get("max_distance_km", 5)),
+                include_ground=bool(config.get("include_ground", False)),
+                max_altitude_m=config.get("max_altitude_m"),
+            )
+            logging.info(f"StreamDeckApp: Flight radar on button {index}: radius {self.flight_service.max_distance_km} km, "
+                         f"poll every {self.flight_poll_interval()} s, facing {self.flight_facing()}°.")
+
+    def flight_poll_interval(self) -> float:
+        cfg = self.buttons_config.get(self.flight_radar_index, {})
+        return max(5.0, float(cfg.get("poll_interval", 15)))
+
+    def flight_facing(self) -> float:
+        cfg = self.buttons_config.get(self.flight_radar_index, {})
+        return float(cfg.get("facing", 0)) % 360
+
+    def run_flight_poll_daemon(self):
+        """Fetches aircraft near home every poll_interval seconds (or right away on a button press)."""
+        while self.running:
+            try:
+                flights = self.flight_service.get_nearby()
+                with self.flight_lock:
+                    self.flight_rotation.update(flights)
+                    self.flight_failures = 0
+                    self.flight_status = "SEM VOOS"
+                    self._flight_signature = None  # new data: redraw even if the same screen is shown
+            except Exception as e:
+                with self.flight_lock:
+                    self.flight_failures += 1
+                    if self.flight_failures >= 3:
+                        self.flight_rotation.update([])
+                        self.flight_status = "OFFLINE"
+                logging.warning(f"StreamDeckApp: Flight radar fetch failed ({self.flight_failures}x): {e}")
+            self.flight_refresh.wait(self.flight_poll_interval())
+            self.flight_refresh.clear()
+
+    def run_flight_display_daemon(self):
+        """Advances the flight carousel (2 screens per flight) and redraws when the screen changes."""
+        while self.running:
+            try:
+                self.render_flight_radar()
+            except Exception as e:
+                logging.error(f"StreamDeckApp: Flight radar render failed: {e}")
+            time.sleep(0.5)
+
+    def render_flight_radar(self, force: bool = False):
+        index = self.flight_radar_index
+        if index is None or not self.flight_rotation:
+            return
+        config = self.buttons_config.get(index, {})
+        with self.flight_lock:
+            cur = self.flight_rotation.current()
+            if cur:
+                flight, page, idx, total = cur
+                signature = (flight.get("hex"), page, idx, total)
+            else:
+                hidden = self.flight_rotation.hidden_count()
+                status = f"{hidden} NO RAIO" if hidden and self.flight_status == "SEM VOOS" else self.flight_status
+                signature = ("idle", status)
+            if not force and signature == self._flight_signature:
+                return
+            self._flight_signature = signature
+        if cur:
+            max_km = self.flight_service.max_distance_km if self.flight_service else 5.0
+            img = self.deck_mgr.render_flight_button(flight, page, idx, total, facing=self.flight_facing(), max_distance_km=max_km)
+        else:
+            img = self.deck_mgr.render_flight_idle(config.get("label", "Radar"), status)
+        self.deck_mgr.show_button_image(index, img)
+
     def run_interactive_simulator(self):
         """
         Interactive command-line interface thread for Simulator Mode.
@@ -617,6 +729,8 @@ class StreamDeckApp:
 
         self.mqtt_service.start()
 
+        self.setup_flight_radar()
+
         # Draw initial button states
         for index in self.buttons_config:
             self.update_button_state(index)
@@ -645,6 +759,10 @@ class StreamDeckApp:
                     udp_thread.start()
             pc_monitor_thread = threading.Thread(target=self.run_pc_monitor_daemon, daemon=True)
             pc_monitor_thread.start()
+
+        if self.flight_service:
+            threading.Thread(target=self.run_flight_poll_daemon, daemon=True).start()
+            threading.Thread(target=self.run_flight_display_daemon, daemon=True).start()
 
         # Start the background state synchronization daemon thread
         sync_thread = threading.Thread(target=self.run_state_sync_daemon, daemon=True)

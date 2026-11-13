@@ -10,6 +10,7 @@ This project is a highly customizable, local Python-based controller for the **U
 5.  Render real-time geometric Weather widgets (for Today and Tomorrow) with caching and tap-to-force-refresh, plus wide weather panels (4-day forecast or 3-hour temperature/rain graph) on the info screen.
 6.  Display Windows PC telemetry statistics (CPU, GPU, RAM, and Disk) with smooth 5-second slide carousel rotations.
 7.  Show Tasmota MQTT sensors (temperature, humidity) and power consumption.
+8.  Show airplanes and helicopters flying near home (free [adsb.lol](https://adsb.lol) ADS-B API).
 
 For developers and off-grid testing, the application includes a robust **Simulator Mode** that allows you to emulate button clicks from your console and writes visual screens directly to a local directory for preview.
 
@@ -28,6 +29,10 @@ Images rendered by the app itself in Simulator Mode (sample data).
 ![Weather panel](assets/widgets/weather_panel.png)
 
 ![Weather graph](assets/widgets/weather_graph.png)
+
+**Flight radar** (`flight_radar`): clear sky, then two screens per flight (LATAM, GOL, a helicopter), and an emergency squawk.
+
+![Flight radar](assets/widgets/flight_radar.png)
 
 ---
 
@@ -198,6 +203,43 @@ Weather conditions map directly to clean geometric vector drawings (white on the
 * **`thunderstorm`**: Cloud silhouette with a center lightning bolt.
 * **`snow`**: Cloud silhouette with delicate snowflake crosses.
 * **`mist`**: Layered horizontal fog/breeze lines.
+
+---
+
+## ✈️ Flight Radar Widget (`action_type: flight_radar`)
+
+Shows airplanes and helicopters inside a radius around home, using the free, keyless [adsb.lol](https://adsb.lol) ADS-B API (community receivers; good coverage around São Paulo). Routes (origin → destination) come from [adsbdb.com](https://www.adsbdb.com) and are cached per callsign for 6 hours.
+
+* **Clear sky:** an airplane drawing with `SEM VOOS` (or `N NO RAIO` when aircraft are still around but past their display time, `OFFLINE` after 3 failed queries).
+* **Each flight alternates 2 screens:**
+  1. *Who:* airline (colored bar), flight number (or registration, e.g. `PS-EII`), aircraft type (`A320`, `AS50`…), route `GRU → POA`.
+  2. *Where:* distance and compass point (`3,8 km NE`), a mini radar with you in the center and the aircraft drawn along its heading, altitude in meters with a climb/descent arrow, and speed in km/h.
+* Several flights alternate (closest first; dots at the bottom show which one). A flight is shown while it is inside the radius; set `max_display_seconds` to cap that (e.g. 180 for a helicopter hovering nearby), after which it is shown again only if it leaves and re-enters the radius.
+* Helicopters (ADS-B category `A7`) get a helicopter icon; emergency squawks (7500/7600/7700) turn the key red.
+* Tap the key to query right away.
+
+Set the home position in `server/.env` (the coordinates are rounded to ~1 km before being sent to the API; exact distances are computed locally):
+
+```env
+FLIGHT_RADAR_LATITUDE=-23.5505
+FLIGHT_RADAR_LONGITUDE=-46.6333
+```
+
+and add the button in `server/config.yaml`:
+
+```yaml
+  - index: 12
+    device_type: "widget"
+    action_type: "flight_radar"
+    label: "Radar"
+    max_distance_km: 5        # radius around home
+    poll_interval: 15         # seconds between queries (min 5)
+    rotate_seconds: 5         # seconds per screen
+    max_display_seconds: 0    # 0 = while inside the radius; or a limit in seconds
+    facing: 0                 # direction you face when looking at the deck: 0 = N, 90 = L, 180 = S, 270 = O
+```
+
+`facing` rotates the mini radar so that "up" on the key is the direction you face when looking at the deck; a small `N` marker on the ring shows where north is.
 
 ---
 

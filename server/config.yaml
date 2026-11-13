@@ -124,6 +124,9 @@ mqtt:
 #                            Replaces the clock; small_window_mode is forced to 2 (background only).
 #       - "tasmota_sensor" : Display temperature and humidity from a Tasmota MQTT telemetry topic
 #       - "tasmota_power"  : Display power consumption (Watts/kW) and current (Amperes) from a Tasmota smart plug via MQTT
+#       - "flight_radar"   : Airplanes and helicopters near home (free adsb.lol ADS-B API). Shows an airplane drawing
+#                            when the sky is clear; otherwise alternates 2 screens per flight (who: airline, flight,
+#                            aircraft type, route / where: mini radar, distance, altitude, speed). Tap to refresh now.
 #
 # - topic:
 #     MQTT telemetry topic for tasmota_sensor / tasmota_power widget (e.g. "tele/sala/SENSOR")
@@ -161,6 +164,16 @@ mqtt:
 #     - port: Telemetry service port (default: 8085 for pull, 9999 for push)
 #     - sync_interval: Update interval in seconds for this specific device (default: 60)
 #     - temp_sensor  : Optional specific sensor name keyword (e.g. "Core (Tctl/Tdie)", "CPU Package", "Temperature #1")
+# - flight_radar attributes (home position goes in .env: FLIGHT_RADAR_LATITUDE / FLIGHT_RADAR_LONGITUDE):
+#     - max_distance_km    : Radius around home in km (default: 5)
+#     - poll_interval      : Seconds between API queries, minimum 5 (default: 15)
+#     - rotate_seconds     : Seconds each screen stays before switching to the next (default: 5)
+#     - max_display_seconds: A flight leaves the rotation after this many seconds in the radius;
+#                            0 = no limit, shown while inside the radius (default: 0)
+#     - facing             : Compass direction (degrees) you face when looking at the deck: 0 = N, 90 = E (L),
+#                            180 = S, 270 = W (O). The radar is drawn with that direction pointing up (default: 0)
+#     - include_ground     : Also show aircraft on the ground (default: false)
+#     - max_altitude_m     : Ignore aircraft above this altitude in meters (default: no limit)
 # ==============================================================================
 
 buttons:
@@ -238,6 +251,16 @@ buttons:
     label: "Sala"
     topic: "tele/sala/SENSOR"
     icon: "thermometer"
+
+  - index: 12
+    device_type: "widget"
+    action_type: "flight_radar"
+    label: "Radar"
+    max_distance_km: 10
+    poll_interval: 15
+    rotate_seconds: 5
+    max_display_seconds: 0   # 0 = show while inside the radius
+    facing: 147.9      # direction you face when looking at the deck (0 = N, 90 = L, 180 = S, 270 = O)
 
   - index: 13        # Wide info screen (replaces the clock)
     device_type: "widget"

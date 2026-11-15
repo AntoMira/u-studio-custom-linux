@@ -9,21 +9,35 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 class WeatherService:
     """
-    Service to fetch weather data from OpenWeather API, with caching and fallback mock values.
+    Service to fetch weather data from the free Open-Meteo API (no API key needed),
+    with caching and fallback mock values.
     """
-    def __init__(self, api_key: str, city: str, timezone=None):
+    FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+    GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+    HOURLY_STEP = 3  # hours per entry in the "hourly" series (one bar per 3 h on the weather graph)
+
+    def __init__(self, city: str = "", timezone=None, latitude=None, longitude=None, mock: bool = False):
         self.timezone = timezone  # tzinfo used to group forecasts by local date (None = system timezone)
-        self.api_key = api_key.strip() if api_key else ""
         self.city = city.strip() if city else "Sao Paulo,BR"
+        self.latitude = self._to_float(latitude)
+        self.longitude = self._to_float(longitude)
+        self.mock = mock
         self._cache = None
         self._cache_time = 0
         self._cache_duration = 3600  # 1 hour cache lifetime
 
+    @staticmethod
+    def _to_float(value):
+        try:
+            return float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
     def is_mock_mode(self) -> bool:
         """
-        Returns True if the OpenWeather API Key is unset or is using the default template value.
+        Returns True when the service was explicitly created in mock mode (tests / offline use).
         """
-        return not self.api_key or self.api_key == "your_openweather_api_key" or self.api_key.startswith("your_")
+        return self.mock
 
     def clear_cache(self):
         """
@@ -32,25 +46,26 @@ class WeatherService:
         logging.info("WeatherService: Cache cleared manually.")
         self._cache_time = 0
 
-    def get_weather_type_and_priority(self, weather_id: int) -> tuple:
+    def get_weather_type_and_priority(self, code: int) -> tuple:
         """
-        Maps OpenWeather weather IDs to a simpler set of categories and prioritizes severe events
-        so that a day with rain/thunderstorms is correctly represented.
+        Maps WMO weather codes (used by Open-Meteo) to a simpler set of categories and prioritizes
+        severe events so that a day with rain/thunderstorms is correctly represented.
         Priority: Thunderstorm (5) > Rain (4) > Snow (3) > Mist (2) > Clouds (1) > Clear (0).
         """
-        if 200 <= weather_id < 300:
-            return "thunderstorm", 5
-        elif 300 <= weather_id < 600:
-            return "rain", 4
-        elif 600 <= weather_id < 700:
-            return "snow", 3
-        elif 700 <= weather_id < 800:
-            return "mist", 2
-        elif weather_id == 800:
+        if code is None:
             return "clear", 0
-        elif 801 <= weather_id < 900:
+        code = int(code)
+        if code >= 95:
+            return "thunderstorm", 5
+        if 51 <= code <= 67 or 80 <= code <= 82:
+            return "rain", 4
+        if 71 <= code <= 77 or 85 <= code <= 86:
+            return "snow", 3
+        if code in (45, 48):
+            return "mist", 2
+        if code in (2, 3):
             return "clouds", 1
-        return "clear", 0
+        return "clear", 0  # 0 = clear sky, 1 = mainly clear
 
     def display_type(self, current: dict, now=None) -> str:
         """
@@ -73,6 +88,30 @@ class WeatherService:
         now_s = now.hour * 3600 + now.minute * 60 + now.second
         return "clear" if sunrise <= now_s < sunset else "clear_night"
 
+    def _resolve_location(self):
+        """
+        Returns (latitude, longitude). Uses the configured coordinates, otherwise looks the city up
+        once with the Open-Meteo geocoding API ("Name" or "Name,CC" where CC is the ISO country code).
+        """
+        if self.latitude is not None and self.longitude is not None:
+            return self.latitude, self.longitude
+        name, _, country = self.city.partition(",")
+        params = {"name": name.strip(), "count": 1, "format": "json"}
+        if country.strip():
+            params["countryCode"] = country.strip().upper()
+        response = requests.get(self.GEOCODING_URL, params=params, timeout=15)
+        response.raise_for_status()
+        results = response.json().get("results") or []
+        if not results:
+            raise ValueError(f"city '{self.city}' not found by the Open-Meteo geocoding API")
+        self.latitude, self.longitude = results[0]["latitude"], results[0]["longitude"]
+        logging.info(f"WeatherService: Resolved '{self.city}' to {self.latitude:.4f}, {self.longitude:.4f}")
+        return self.latitude, self.longitude
+
+    def _timezone_param(self) -> str:
+        # Open-Meteo groups daily values by this timezone; "auto" = the location's own timezone
+        return getattr(self.timezone, "key", None) or "auto"
+
     def get_weather_data(self) -> dict:
         """
         Returns parsed weather data for today ('weather') and tomorrow ('weather+1').
@@ -83,32 +122,33 @@ class WeatherService:
         if self._cache and (now - self._cache_time < self._cache_duration):
             return self._cache
 
-        # If key is missing/placeholder, yield premium mock data
         if self.is_mock_mode():
-            logging.info("WeatherService: Operating in MOCK mode (No valid API key). Returning premium mock forecast.")
+            logging.info("WeatherService: Operating in MOCK mode. Returning premium mock forecast.")
             self._cache = self._mock_data()
             self._cache_time = now
             return self._cache
 
-        # Query the OpenWeather 5 Day / 3 Hour Forecast API
         try:
-            logging.info(f"WeatherService: Fetching fresh forecast for city: {self.city}")
-            url = "https://api.openweathermap.org/data/2.5/forecast"
+            lat, lon = self._resolve_location()
+            logging.info(f"WeatherService: Fetching fresh forecast from Open-Meteo for {lat:.2f}, {lon:.2f}")
             params = {
-                "q": self.city,
-                "appid": self.api_key,
-                "units": "metric"
+                # Rounded to ~1 km (like the flight radar): finer than the forecast grid, so no loss
+                "latitude": round(lat, 2),
+                "longitude": round(lon, 2),
+                "current": "temperature_2m,weather_code",
+                "hourly": "temperature_2m,precipitation,precipitation_probability",
+                "daily": "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset",
+                "timezone": self._timezone_param(),
+                "timeformat": "unixtime",
+                "forecast_days": 6,
             }
-            response = requests.get(url, params=params, timeout=8)
-            
+            response = requests.get(self.FORECAST_URL, params=params, timeout=15)
             if response.status_code == 200:
-                data = response.json()
-                self._cache = self._parse_forecast_data(data)
+                self._cache = self._parse_forecast_data(response.json())
                 self._cache_time = now
-                logging.info("WeatherService: Successfully updated weather cache from OpenWeather API.")
+                logging.info("WeatherService: Successfully updated weather cache from Open-Meteo.")
                 return self._cache
-            else:
-                logging.error(f"WeatherService: OpenWeather API returned status code {response.status_code}: {response.text}")
+            logging.error(f"WeatherService: Open-Meteo returned status code {response.status_code}: {response.text}")
         except Exception as e:
             logging.error(f"WeatherService: Network or parsing exception during API fetch: {e}")
 
@@ -140,121 +180,70 @@ class WeatherService:
             ],
         }
 
-    def _parse_forecast_data(self, data: dict) -> dict:
+    def _parse_forecast_data(self, data: dict, now=None) -> dict:
         """
-        Groups the 3-hour forecasts by logical calendar dates, extracts the daily temperature min/max,
-        and determines the most significant weather condition for today and tomorrow.
+        Converts an Open-Meteo forecast (timeformat=unixtime) into the structure used by the widgets:
+        current conditions, today's/tomorrow's summaries, 3-hour temperature/rain series and daily summaries.
         """
-        today_date = datetime.now(self.timezone).date()
-        tomorrow_date = today_date + timedelta(days=1)
-        
-        # Group items by their local date
-        days_data = {}
-        for item in data.get("list", []):
-            dt = item.get("dt")
-            if not dt:
-                continue
-            item_date = datetime.fromtimestamp(dt, self.timezone).date()
-            if item_date not in days_data:
-                days_data[item_date] = []
-            days_data[item_date].append(item)
+        now_ts = now if now is not None else time.time()
+        hourly = data.get("hourly") or {}
+        h_time = hourly.get("time") or []
+        h_temp = hourly.get("temperature_2m") or []
+        h_rain = hourly.get("precipitation") or []
+        h_pop = hourly.get("precipitation_probability") or []
 
-        # Fallback in case today's timezone boundary results in empty arrays
-        sorted_dates = sorted(days_data.keys())
-        today_records = days_data.get(today_date, [])
-        tomorrow_records = days_data.get(tomorrow_date, [])
+        def at(series, i, default=0.0):
+            v = series[i] if i < len(series) else None
+            return default if v is None else v
 
-        if not today_records and len(sorted_dates) > 0:
-            today_date = sorted_dates[0]
-            today_records = days_data[today_date]
-        if not tomorrow_records and len(sorted_dates) > 1:
-            tomorrow_date = sorted_dates[1]
-            tomorrow_records = days_data[tomorrow_date]
+        # First hourly entry of the current hour (falls back to the start of the series)
+        first = next((i for i, t in enumerate(h_time) if t + 3600 > now_ts), 0)
 
-        parsed = {}
-        
-        # Parse current weather (using the very first/nearest forecast entry)
-        first_item = data.get("list", [])[0] if data.get("list") else {}
-        current_temp = 18.0
-        current_pop = 0.0
-        current_type = "clear"
-        
-        if first_item:
-            current_temp = first_item.get("main", {}).get("temp", 18.0)
-            current_pop = first_item.get("pop", 0.0)
-            w_list = first_item.get("weather", [])
-            if w_list:
-                w_id = w_list[0].get("id", 800)
-                current_type, _ = self.get_weather_type_and_priority(w_id)
-                
-        city = data.get("city", {})
-        parsed["weather"] = {
-            "temp": current_temp,
-            "pop": current_pop,
-            "type": current_type,
-            "sunrise": city.get("sunrise"),
-            "sunset": city.get("sunset"),
+        # Daily summaries, today first
+        daily = data.get("daily") or {}
+        days = []
+        for i, t in enumerate(daily.get("time") or []):
+            w_type, _ = self.get_weather_type_and_priority(at(daily.get("weather_code") or [], i, 0))
+            days.append({
+                "date": datetime.fromtimestamp(t, self.timezone).date().isoformat(),
+                "min_temp": at(daily.get("temperature_2m_min") or [], i, 18.0),
+                "max_temp": at(daily.get("temperature_2m_max") or [], i, 26.0),
+                "type": w_type,
+                "pop": at(daily.get("precipitation_probability_max") or [], i, 0.0) / 100.0,
+                "sunrise": at(daily.get("sunrise") or [], i, None),
+                "sunset": at(daily.get("sunset") or [], i, None),
+            })
+        today_iso = datetime.fromtimestamp(now_ts, self.timezone).date().isoformat()
+        while len(days) > 1 and days[0]["date"] < today_iso:
+            days.pop(0)
+
+        def summary(day, default):
+            return {k: day[k] for k in ("min_temp", "max_temp", "type", "pop")} if day else default
+
+        current = data.get("current") or {}
+        current_type, _ = self.get_weather_type_and_priority(current.get("weather_code", 0))
+        # Rain chance for the next 3 hours (what the 3-hour forecast used to report)
+        next_pops = [at(h_pop, i) for i in range(first, min(first + self.HOURLY_STEP, len(h_time)))]
+        parsed = {
+            "weather": {
+                "temp": current.get("temperature_2m", at(h_temp, first, 18.0)),
+                "pop": (max(next_pops) if next_pops else 0.0) / 100.0,
+                "type": current_type,
+                "sunrise": days[0]["sunrise"] if days else None,
+                "sunset": days[0]["sunset"] if days else None,
+            },
+            "weather_forecast": summary(days[0] if days else None, {"min_temp": 18.0, "max_temp": 26.0, "type": "clear"}),
+            "weather_forecast+1": summary(days[1] if len(days) > 1 else None, {"min_temp": 16.0, "max_temp": 22.0, "type": "rain"}),
         }
-        
-        # Parse today's weather forecast
-        if today_records:
-            parsed["weather_forecast"] = self._aggregate_day_records(today_records)
-        else:
-            parsed["weather_forecast"] = { "min_temp": 18.0, "max_temp": 26.0, "type": "clear" }
 
-        # Parse tomorrow's weather forecast
-        if tomorrow_records:
-            parsed["weather_forecast+1"] = self._aggregate_day_records(tomorrow_records)
-        else:
-            parsed["weather_forecast+1"] = { "min_temp": 16.0, "max_temp": 22.0, "type": "rain" }
+        # 3-hour temperature and rain (mm summed over the 3 hours) series for the weather graph
+        parsed["hourly"] = []
+        for i in range(first, len(h_time) - self.HOURLY_STEP + 1, self.HOURLY_STEP):
+            parsed["hourly"].append({
+                "date": datetime.fromtimestamp(h_time[i], self.timezone).date().isoformat(),
+                "temp": at(h_temp, i),
+                "rain": round(sum(at(h_rain, j) for j in range(i, i + self.HOURLY_STEP)), 2),
+            })
 
-        # 3-hour temperature and rain (mm) series for the weather graph
-        parsed["hourly"] = [
-            { "date": datetime.fromtimestamp(item["dt"], self.timezone).date().isoformat(), "temp": item.get("main", {}).get("temp", 0.0), "rain": (item.get("rain") or {}).get("3h", 0.0) }
-            for item in data.get("list", []) if item.get("dt")
-        ]
-
-        # Daily summaries (today + following days available in the 5-day forecast)
-        parsed["daily"] = []
-        for day in sorted_dates[:5]:
-            summary = self._aggregate_day_records(days_data[day])
-            summary["date"] = day.isoformat()
-            parsed["daily"].append(summary)
-
+        parsed["daily"] = [dict(summary(d, None), date=d["date"]) for d in days[:5]]
         return parsed
-
-    def _aggregate_day_records(self, records: list) -> dict:
-        """
-        Aggregates temperatures and resolves the predominant weather category based on priority.
-        """
-        temps_min = []
-        temps_max = []
-        best_type = "clear"
-        max_priority = -1
-        max_pop = 0.0
-
-        for item in records:
-            max_pop = max(max_pop, item.get("pop", 0.0))
-            main = item.get("main", {})
-            if "temp_min" in main:
-                temps_min.append(main["temp_min"])
-            if "temp_max" in main:
-                temps_max.append(main["temp_max"])
-
-            w_list = item.get("weather", [])
-            if w_list:
-                w_id = w_list[0].get("id", 800)
-                w_type, priority = self.get_weather_type_and_priority(w_id)
-                if priority > max_priority:
-                    max_priority = priority
-                    best_type = w_type
-
-        min_temp = min(temps_min) if temps_min else 18.0
-        max_temp = max(temps_max) if temps_max else 26.0
-
-        return {
-            "min_temp": min_temp,
-            "max_temp": max_temp,
-            "type": best_type,
-            "pop": max_pop
-        }

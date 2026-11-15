@@ -258,29 +258,16 @@ def test_weather_service():
     Validates WeatherService aggregation, priorities, and mock structures.
     """
     print("Testing WeatherService logic and aggregation...")
-    service = WeatherService(api_key="", city="Sao Paulo,BR")
-    assert service.is_mock_mode() is True, "WeatherService should run in mock mode when API key is empty"
-    
-    # Test priority mapping
-    w_type, priority = service.get_weather_type_and_priority(201)
-    assert w_type == "thunderstorm" and priority == 5
-    
-    w_type, priority = service.get_weather_type_and_priority(800)
-    assert w_type == "clear" and priority == 0
-    
-    w_type, priority = service.get_weather_type_and_priority(501)
-    assert w_type == "rain" and priority == 4
+    service = WeatherService(city="Sao Paulo,BR", mock=True)
+    assert service.is_mock_mode() is True, "WeatherService should run in mock mode when asked to"
+    assert WeatherService(city="Sao Paulo,BR").is_mock_mode() is False, "Open-Meteo needs no API key, so real mode is the default"
 
-    # Test aggregate helper
-    records = [
-        {"main": {"temp_min": 15.0, "temp_max": 20.0}, "weather": [{"id": 800}]},  # clear
-        {"main": {"temp_min": 14.0, "temp_max": 22.0}, "weather": [{"id": 500}]},  # rain
-        {"main": {"temp_min": 16.0, "temp_max": 18.0}, "weather": [{"id": 801}]},  # clouds
-    ]
-    res = service._aggregate_day_records(records)
-    assert res["min_temp"] == 14.0, "Aggregated min temperature should be the minimum over all records"
-    assert res["max_temp"] == 22.0, "Aggregated max temperature should be the maximum over all records"
-    assert res["type"] == "rain", "Aggregated predominant type should prioritize severe/rain over clear/clouds"
+    # Test WMO weather code mapping
+    expected = {0: "clear", 1: "clear", 2: "clouds", 3: "clouds", 45: "mist", 51: "rain", 63: "rain",
+                81: "rain", 71: "snow", 86: "snow", 95: "thunderstorm", 99: "thunderstorm"}
+    for code, w_type in expected.items():
+        assert service.get_weather_type_and_priority(code)[0] == w_type, f"WMO code {code} should map to {w_type}"
+    assert service.get_weather_type_and_priority(95)[1] > service.get_weather_type_and_priority(61)[1] > service.get_weather_type_and_priority(3)[1]
     
     # Test mock forecast retrieval
     data = service.get_weather_data()
@@ -766,20 +753,41 @@ def test_weather_panel():
     and that the physical deck uploads it for the wide info screen cell.
     """
     print("Testing weather panel (daily forecast + wide render)...")
-    ws = WeatherService(api_key="", city="Test")
+    ws = WeatherService(city="Test", mock=True)
     data = ws.get_weather_data()
     assert len(data["daily"]) >= 4, "Daily forecast must cover at least 4 days"
     assert all(k in data["daily"][0] for k in ("date", "min_temp", "max_temp", "type", "pop")), "Daily entries need date/min/max/type/pop"
 
-    # Parse a real-shaped OpenWeather payload spanning 5 dates
-    base = int(time.time())
-    payload = {"list": [
-        {"dt": base + h * 3600, "main": {"temp": 20, "temp_min": 15 + h % 5, "temp_max": 25 - h % 3}, "weather": [{"id": 500 if h % 7 == 0 else 800}], "pop": 0.4 if h % 7 == 0 else 0.1}
-        for h in range(0, 120, 3)
-    ]}
-    parsed = ws._parse_forecast_data(payload)
-    assert 4 <= len(parsed["daily"]) <= 5, f"Expected 4-5 daily entries, got {len(parsed['daily'])}"
-    assert all(d["pop"] >= 0.1 for d in parsed["daily"]), "Daily pop must be the max of the day's entries"
+    # Parse a real-shaped Open-Meteo payload (timeformat=unixtime) spanning 6 days
+    from datetime import datetime as _dt
+    midnight = int(_dt.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    now_ts = midnight + 10 * 3600 + 1200  # 10:20 today
+    hours = [midnight + h * 3600 for h in range(144)]
+    payload = {
+        "current": {"time": now_ts, "temperature_2m": 21.5, "weather_code": 61},
+        "hourly": {
+            "time": hours,
+            "temperature_2m": [15 + h % 12 for h in range(144)],
+            "precipitation": [1.0 if 12 <= h < 15 else 0.0 for h in range(144)],
+            "precipitation_probability": [40 if h == 11 else 10 for h in range(144)],
+        },
+        "daily": {
+            "time": [midnight + d * 86400 for d in range(6)],
+            "temperature_2m_min": [14, 15, 16, 17, 18, 19],
+            "temperature_2m_max": [24, 25, 26, 27, 28, 29],
+            "weather_code": [95, 61, 3, 0, 71, 45],
+            "precipitation_probability_max": [80, 60, 10, 0, 30, 5],
+            "sunrise": [midnight + d * 86400 + 6 * 3600 for d in range(6)],
+            "sunset": [midnight + d * 86400 + 18 * 3600 for d in range(6)],
+        },
+    }
+    parsed = ws._parse_forecast_data(payload, now=now_ts)
+    assert len(parsed["daily"]) == 5, f"Expected 5 daily entries, got {len(parsed['daily'])}"
+    assert [d["type"] for d in parsed["daily"]] == ["thunderstorm", "rain", "clouds", "clear", "snow"]
+    assert parsed["daily"][0]["pop"] == 0.8 and parsed["weather_forecast+1"]["max_temp"] == 25
+    assert parsed["weather"]["temp"] == 21.5 and parsed["weather"]["type"] == "rain"
+    assert parsed["weather"]["pop"] == 0.4, "Current pop is the max chance over the next 3 hours"
+    assert parsed["weather"]["sunrise"] == midnight + 6 * 3600
 
     manager = DeckManager(simulator_mode=True)
     current = data["weather"]
@@ -793,11 +801,23 @@ def test_weather_panel():
     # Weather graph: hourly series is timezone-aware and renders at the same size
     assert len(data["hourly"]) >= 24 and all("temp" in h and "rain" in h for h in data["hourly"]), "Hourly series needs temp and rain"
     parsed_hourly = parsed["hourly"]
-    assert len(parsed_hourly) == len(payload["list"]) and parsed_hourly[0]["rain"] == 0.0, "Hourly series must mirror the forecast list"
+    assert parsed_hourly[0]["temp"] == 15 + 10, "Hourly series starts at the current hour"
+    assert len(parsed_hourly) == (144 - 10) // 3 and all(h["temp"] is not None for h in parsed_hourly)
+    assert parsed_hourly[0]["rain"] == 1.0 and parsed_hourly[1]["rain"] == 2.0, "Rain is summed over each 3-hour block"
     graph = manager.render_weather_graph(current, data["weather_forecast"], data["hourly"])
     assert graph.size == (458, 196), f"Graph must be 458x196, got {graph.size}"
     manager.update_weather_graph(current, data["weather_forecast"], data["hourly"])
     assert os.path.exists(os.path.join(manager.output_sim_dir, "weather_graph.png")), "Simulator must save weather_graph.png"
+
+    # Rain curve: the monotone spline never overshoots the forecast values nor dips below 0 mm
+    for vals in ([0, 0, 10, 0, 0], [0, 0, 10, 10, 0, 0], [0, 0, 10, 20, 20, 0], [0, 2, 10, 4, 0], [5, 0, 0, 7]):
+        curve = DeckManager._monotone_curve([(i * 9.0, v) for i, v in enumerate(vals)])
+        ys = [y for _, y in curve]
+        assert max(ys) <= max(vals) + 1e-9 and min(ys) >= -1e-9, f"Rain curve overshoots for {vals}: {min(ys):.2f}..{max(ys):.2f}"
+        for (xa, ya), (xb, yb) in zip(curve, curve[1:]):
+            i = min(int(xa // 9.0), len(vals) - 2)
+            lo, hi = sorted((vals[i], vals[i + 1]))
+            assert lo - 1e-9 <= ya <= hi + 1e-9, f"Rain curve leaves the range of its neighbours for {vals}"
 
     try:
         import strmdck.device_manager as dm

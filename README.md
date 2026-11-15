@@ -89,7 +89,7 @@ To control your lights, you need to configure the local network bridge connectio
     ```
     *   The bridge will return a JSON response containing a generated `username` string (this is your API Key). Keep this private.
 
-### 3. Environment Secrets (.env) & OpenWeather API
+### 3. Environment Secrets (.env) & Weather Location
 
 Create a `.env` file inside the `server/` directory by copying the example template:
 
@@ -105,10 +105,15 @@ HUE_USERNAME=your_generated_api_username
 SIMULATOR_MODE=True            # Set to False to communicate with physical D200 hardware
 TIMEZONE=America/Sao_Paulo    # Configure your preferred local timezone
 
-# OpenWeather API Configuration (Required for weather, weather_forecast, weather_forecast+1, and weather_panel)
-OPENWEATHER_API_KEY=your_openweather_api_key
-OPENWEATHER_CITY=Sao Paulo,BR
+# Weather location (Open-Meteo, no API key needed)
+WEATHER_CITY=Sao Paulo,BR
+# WEATHER_LATITUDE=-23.5505   # optional coordinates; default is the flight radar home
+# WEATHER_LONGITUDE=-46.6333
 ```
+
+The weather location is `WEATHER_LATITUDE`/`WEATHER_LONGITUDE` if set, otherwise the flight radar home (`FLIGHT_RADAR_LATITUDE`/`FLIGHT_RADAR_LONGITUDE`), otherwise `WEATHER_CITY` looked up by name. Coordinates are rounded to ~1 km before being sent to Open-Meteo.
+
+Weather data comes from [Open-Meteo](https://open-meteo.com/), which is free and needs no account or API key.
 
 ---
 
@@ -172,7 +177,7 @@ keep_screen_on_hue_ids: "2, 5, 6"             # Comma-separated list of Hue Ligh
 
 ## ☀️ Weather Widgets & Temperature Color Gradients
 
-The Stream Deck features real-time weather widgets for current conditions (`action_type: weather`), today's forecast (`action_type: weather_forecast`), and tomorrow's forecast (`action_type: weather_forecast+1`).
+Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no API key). The Stream Deck features real-time weather widgets for current conditions (`action_type: weather`), today's forecast (`action_type: weather_forecast`), and tomorrow's forecast (`action_type: weather_forecast+1`).
 
 ### Wide Weather Panel (`action_type: weather_panel`)
 The D200 info screen can be used as a wide display instead of the clock. Add a button with `index: 13` and `action_type: weather_panel` (`small_window_mode` is forced to `2`, background only). It shows the current temperature, rain chance and today's min/max on the left, and the next 4 days on the right (weekday, icon, max and min, rain chance when ≥ 30%). Temperatures follow the color scale below and icons are colored by condition (yellow sun, white clouds, blue-gray rain, etc.). It is only redrawn and re-uploaded when the data changes.
@@ -180,7 +185,7 @@ The D200 info screen can be used as a wide display instead of the clock. Add a b
 ![Weather panel](assets/widgets/weather_panel.png)
 
 ### Wide Weather Graph (`action_type: weather_graph`)
-Alternative to `weather_panel` on the info screen (`index: 13`). The left block (current conditions) is identical; the right side shows one bar per 3-hour forecast (next ~4 days). Bar height is the temperature on a 0–45 °C scale and bar color follows the temperature color scale. A dotted white line marks each midnight, with the weekday written above each day. A translucent white curve over the bars shows the forecast rain in mm per 3 hours (0 to 30 mm, `WEATHER_GRAPH_MAX_RAIN_MM` in `deck_manager.py`). No numbers are drawn.
+Alternative to `weather_panel` on the info screen (`index: 13`). The left block (current conditions) is identical; the right side shows one bar per 3-hour forecast (next ~4 days). Bar height is the temperature on a 0–40 °C scale and bar color follows the temperature color scale. A dotted white line marks each midnight, with the weekday written above each day. A translucent white curve over the bars shows the forecast rain in mm per 3 hours (0 to 30 mm, `WEATHER_GRAPH_MAX_RAIN_MM` in `deck_manager.py`). No numbers are drawn.
 
 ![Weather graph](assets/widgets/weather_graph.png)
 

@@ -637,7 +637,7 @@ class DeckManager:
     def render_weather_graph(self, current: dict, today: dict, hourly: list):
         """
         Renders the 458x196 weather graph: the same current-conditions block as the weather panel,
-        followed by one bar per 3-hour forecast (height = temperature on a 0-45 scale, color = temperature
+        followed by one bar per 3-hour forecast (height = temperature on a 0-40 scale, color = temperature
         scale). A dotted gray line marks each midnight.
         hourly: [{date(ISO), temp, rain(mm per 3 h)}] in chronological order.
         A translucent blue curve over the bars shows the rain, 0 to WEATHER_GRAPH_MAX_RAIN_MM.
@@ -651,7 +651,7 @@ class DeckManager:
 
         x0, x1 = left_w + 12, width - 8
         top, bottom = 30, height - 25
-        t_min, t_max = 0.0, 45.0
+        t_min, t_max = 0.0, 40.0
         slot = (x1 - x0) / len(hourly)
         bar_w = max(2, int(slot) - 2)
         for i, item in enumerate(hourly):
@@ -684,6 +684,34 @@ class DeckManager:
                 start = i
         return img
 
+    @staticmethod
+    def _monotone_curve(pts: list, steps: int = 8) -> list:
+        """
+        Smooth curve through equally spaced points using a monotone cubic (PCHIP / Fritsch-Carlson)
+        spline: between two points it never goes above the larger or below the smaller one, so a
+        rain peak is never drawn higher than the forecast and the curve never dips below 0 mm.
+        """
+        n = len(pts)
+        if n < 2:
+            return list(pts)
+        h = pts[1][0] - pts[0][0]
+        d = [(pts[i + 1][1] - pts[i][1]) / h for i in range(n - 1)]
+        m = [d[0]] + [
+            0.0 if d[i - 1] * d[i] <= 0 else 2 * d[i - 1] * d[i] / (d[i - 1] + d[i])  # harmonic mean
+            for i in range(1, n - 1)
+        ] + [d[-1]]
+        curve = []
+        for i in range(n - 1):
+            (x0, y0), (_, y1) = pts[i], pts[i + 1]
+            for k in range(steps):
+                t = k / steps
+                t2, t3 = t * t, t * t * t
+                y = ((2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * h * m[i]
+                     + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * h * m[i + 1])
+                curve.append((x0 + h * t, y))
+        curve.append(pts[-1])
+        return curve
+
     def _draw_rain_curve(self, img, hourly: list, x0: float, slot: float, top: int, bottom: int):
         """Draws the rain as a smooth translucent white area (with a solid edge only where it rains) over the bars."""
         if not any(h.get("rain", 0) > 0 for h in hourly):
@@ -693,18 +721,7 @@ class DeckManager:
             (x0 + slot * (i + 0.5), bottom - rain_h * min(max(h.get("rain", 0.0) / self.WEATHER_GRAPH_MAX_RAIN_MM, 0.0), 1.0))
             for i, h in enumerate(hourly)
         ]
-        # Catmull-Rom spline through the points; y is clamped so the curve never dips below 0 mm
-        curve = []
-        steps = 8
-        for i in range(len(pts) - 1):
-            p0, p1, p2, p3 = pts[max(i - 1, 0)], pts[i], pts[i + 1], pts[min(i + 2, len(pts) - 1)]
-            for k in range(steps):
-                t = k / steps
-                t2, t3 = t * t, t * t * t
-                x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
-                y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
-                curve.append((x, min(max(y, top), bottom)))
-        curve.append(pts[-1])
+        curve = [(x, min(max(y, top), bottom)) for x, y in self._monotone_curve(pts)]
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         odraw = ImageDraw.Draw(overlay)
         odraw.polygon(curve + [(curve[-1][0], bottom), (curve[0][0], bottom)], fill=(255, 255, 255, 120))

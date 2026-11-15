@@ -93,12 +93,14 @@ class StreamDeckApp:
             username=self.username, 
             simulator_mode=self.simulator_mode
         )
-        self.openweather_api_key = os.getenv("OPENWEATHER_API_KEY", "")
-        self.openweather_city = os.getenv("OPENWEATHER_CITY", "Sao Paulo,BR")
+        # Open-Meteo needs no API key. Location: WEATHER_LATITUDE/LONGITUDE, else the flight radar's home
+        # (FLIGHT_RADAR_LATITUDE/LONGITUDE), else WEATHER_CITY geocoded (OPENWEATHER_CITY still accepted).
+        self.weather_city = os.getenv("WEATHER_CITY") or os.getenv("OPENWEATHER_CITY") or "Sao Paulo,BR"
         self.weather_service = WeatherService(
-            api_key=self.openweather_api_key,
-            city=self.openweather_city,
-            timezone=self.timezone
+            city=self.weather_city,
+            timezone=self.timezone,
+            latitude=os.getenv("WEATHER_LATITUDE", "").strip() or os.getenv("FLIGHT_RADAR_LATITUDE", "").strip(),
+            longitude=os.getenv("WEATHER_LONGITUDE", "").strip() or os.getenv("FLIGHT_RADAR_LONGITUDE", "").strip(),
         )
         self.mqtt_service = MqttService(
             broker=self.mqtt_config.get("broker", ""),

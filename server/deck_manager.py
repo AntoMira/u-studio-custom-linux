@@ -975,7 +975,8 @@ class DeckManager:
         font_l = ImageFont.load_default(size=self.font_size_label)
         self._draw_centered(draw, self.margin_label, label, font_l)
         font_s = self._fit_font(draw, status, 184, min(self.font_size_status, 24))
-        self._draw_centered(draw, h - 40, status, font_s, (170, 182, 200))
+        color = (235, 125, 125) if status == "OFFLINE" else (170, 182, 200)
+        self._draw_centered(draw, h - 40, status, font_s, color)
         return img
 
     def show_button_image(self, index: int, img, sim_name: str = None):

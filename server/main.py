@@ -122,7 +122,7 @@ class StreamDeckApp:
         )
         
         # Register a callback to reset activity timer when screen is woken up
-        self.deck_mgr.register_wake_callback(self.reset_activity_timer)
+        self.deck_mgr.register_wake_callback(self.on_screen_wake)
 
         self._weather_panel_signature = None
         self._weather_graph_signature = None
@@ -568,6 +568,8 @@ class StreamDeckApp:
                                 icon_path=config.get("icon"),
                                 reachable=reachable
                             )
+                    elif not self.deck_mgr.screen_on:
+                        continue  # screen off: skip weather/sensor fetches
                     elif device_type == "widget" and config.get("action_type") in ("weather", "weather_forecast", "weather_forecast+1", "weather_panel", "weather_graph", "tasmota_sensor", "mqtt_temp", "tasmota_power", "mqtt_power"):
                         self.update_button_state(index)
                 # Poll every dynamic sync interval configured by user
@@ -622,6 +624,11 @@ class StreamDeckApp:
     def run_flight_poll_daemon(self):
         """Fetches aircraft near home every poll_interval seconds (or right away on a button press)."""
         while self.running:
+            if not self.deck_mgr.screen_on:
+                # Screen off: don't query the API; a wake sets flight_refresh.
+                self.flight_refresh.wait(self.flight_poll_interval())
+                self.flight_refresh.clear()
+                continue
             try:
                 flights = self.flight_service.get_nearby()
                 with self.flight_lock:
@@ -632,9 +639,10 @@ class StreamDeckApp:
             except Exception as e:
                 with self.flight_lock:
                     self.flight_failures += 1
+                    self.flight_status = "OFFLINE"
+                    self._flight_signature = None
                     if self.flight_failures >= 3:
                         self.flight_rotation.update([])
-                        self.flight_status = "OFFLINE"
                 logging.warning(f"StreamDeckApp: Flight radar fetch failed ({self.flight_failures}x): {e}")
             self.flight_refresh.wait(self.flight_poll_interval())
             self.flight_refresh.clear()
@@ -1175,6 +1183,29 @@ class StreamDeckApp:
                 logging.error(f"StreamDeckApp: Error in PC Monitor Daemon: {e}")
                 time.sleep(2)
 
+    def on_screen_wake(self):
+        """Screen just turned back on: reset the idle timer and refresh data skipped while it was off."""
+        self.reset_activity_timer()
+        # Drop data gathered before the screen went off, as on a service restart:
+        # flights show the idle placeholder and weather is fetched fresh.
+        if self.flight_rotation:
+            with self.flight_lock:
+                self.flight_rotation.update([])
+                self.flight_status = "SEM VOOS"
+                self.flight_failures = 0
+                self._flight_signature = None
+        self.weather_service.clear_cache()
+        self.flight_refresh.set()
+
+        def refresh_widgets():
+            for index, config in list(self.buttons_config.items()):
+                if config.get("device_type") == "widget":
+                    try:
+                        self.update_button_state(index)
+                    except Exception as e:
+                        logging.error(f"StreamDeckApp: Wake refresh of button {index} failed: {e}")
+        threading.Thread(target=refresh_widgets, daemon=True).start()
+
     def reset_activity_timer(self):
         """
         Resets the last user activity timestamp to keep the screen awake.
@@ -1274,10 +1305,12 @@ class StreamDeckApp:
                     logging.info("StreamDeckApp: Keep-awake item active. Turning screen ON.")
                     self.deck_mgr.screen_on = True
                     self.deck_mgr.set_screen_brightness(80)
+                    self.on_screen_wake()
                 elif has_window and not in_sleep_window:
                     logging.info("StreamDeckApp: Outside sleep window. Ensuring screen is ON.")
                     self.deck_mgr.screen_on = True
                     self.deck_mgr.set_screen_brightness(80)
+                    self.on_screen_wake()
 
 if __name__ == "__main__":
     app = StreamDeckApp()

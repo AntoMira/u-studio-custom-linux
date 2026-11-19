@@ -10,7 +10,7 @@ This project is a highly customizable, local Python-based controller for the **U
 5.  Render real-time geometric Weather widgets (for Today and Tomorrow) with caching and tap-to-force-refresh, plus wide weather panels (4-day forecast or 3-hour temperature/rain graph) on the info screen.
 6.  Display Windows PC telemetry statistics (CPU, GPU, RAM, and Disk) with smooth 5-second slide carousel rotations.
 7.  Show Tasmota MQTT sensors (temperature, humidity) and power consumption.
-8.  Show airplanes and helicopters flying near home (free [adsb.lol](https://adsb.lol) ADS-B API).
+8.  Show airplanes and helicopters flying near home (free [adsb.fi](https://adsb.fi) ADS-B API).
 
 For developers and off-grid testing, the application includes a robust **Simulator Mode** that allows you to emulate button clicks from your console and writes visual screens directly to a local directory for preview.
 
@@ -213,7 +213,7 @@ Weather conditions map directly to clean geometric vector drawings (white on the
 
 ## ✈️ Flight Radar Widget (`action_type: flight_radar`)
 
-Shows airplanes and helicopters inside a radius around home, using the free, keyless [adsb.lol](https://adsb.lol) ADS-B API (community receivers; good coverage around São Paulo). Routes (origin → destination) come from [adsbdb.com](https://www.adsbdb.com) and are cached per callsign for 6 hours.
+Shows airplanes and helicopters inside a radius around home, using the free, keyless [adsb.fi](https://adsb.fi) ADS-B API (community receivers; good coverage around São Paulo). Routes (origin → destination) come from [adsbdb.com](https://www.adsbdb.com) and are cached per callsign for 6 hours.
 
 * **Clear sky:** an airplane drawing with `SEM VOOS` (or `N NO RAIO` when aircraft are still around but past their display time, `OFFLINE` after 3 failed queries).
 * **Each flight alternates 2 screens:**
@@ -388,6 +388,9 @@ This project makes use of the following awesome open-source projects and librari
 *   **[`strmdck`](https://pypi.org/project/strmdck/)**: Python library for communication and hardware interface with the Ulanzi D200 Stream Controller.
 *   **[LibreHardwareMonitor](https://librehardwaremonitor.com/)**: Open-source software for monitoring CPU, GPU, RAM, and Disk performance telemetry.
 *   **[Philips Hue API](https://developers.meethue.com/)**: Local REST API for Philips Hue bridge and smart device control.
+*   **[adsb.fi](https://adsb.fi)**: Free, community-run ADS-B open-data API that provides the live aircraft positions for the flight radar.
+*   **[adsbdb](https://www.adsbdb.com)**: Free API for flight routes (origin → destination) by callsign.
+*   **[Open-Meteo](https://open-meteo.com/)**: Free, keyless weather forecast API behind the weather widgets.
 *   **[Pillow (PIL)](https://python-pillow.org/)**: Python Imaging Library used for real-time dynamic key screen rendering.
 *   **[Google Antigravity](https://deepmind.google/) & [Google Gemini](https://gemini.google.com/)**: AI pair programming platform and models used to architect, build, debug, and document this codebase.
 *   **[Claude](https://claude.ai/) & [Claude Code](https://claude.com/claude-code)**: Anthropic's AI assistant and coding agent, used to build the weather panel and graph widgets, fix timezone handling, and maintain this documentation.

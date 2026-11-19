@@ -124,7 +124,7 @@ mqtt:
 #                            Replaces the clock; small_window_mode is forced to 2 (background only).
 #       - "tasmota_sensor" : Display temperature and humidity from a Tasmota MQTT telemetry topic
 #       - "tasmota_power"  : Display power consumption (Watts/kW) and current (Amperes) from a Tasmota smart plug via MQTT
-#       - "flight_radar"   : Airplanes and helicopters near home (free adsb.lol ADS-B API). Shows an airplane drawing
+#       - "flight_radar"   : Airplanes and helicopters near home (free adsb.fi ADS-B API). Shows an airplane drawing
 #                            when the sky is clear; otherwise alternates 2 screens per flight (who: airline, flight,
 #                            aircraft type, route / where: mini radar, distance, altitude, speed). Tap to refresh now.
 #

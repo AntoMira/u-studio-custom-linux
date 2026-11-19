@@ -51,13 +51,13 @@ def compass_point(deg: float) -> str:
 
 class FlightService:
     """
-    Finds aircraft near a fixed point using the free adsb.lol API (ADS-B community network) and
+    Finds aircraft near a fixed point using the free adsb.fi open-data API (ADS-B community network) and
     looks up airline routes (origin/destination) on adsbdb.com, cached per callsign.
 
     The query center is rounded to 2 decimals (~1 km) before being sent to the API, the radius is
     padded to cover the rounding, and exact distances are computed locally from the real point.
     """
-    API_URL = "https://api.adsb.lol/v2/point/{lat}/{lon}/{radius}"
+    API_URL = "https://opendata.adsb.fi/api/v2/lat/{lat}/lon/{lon}/dist/{radius}"
     ROUTE_URL = "https://api.adsbdb.com/v0/callsign/{callsign}"
     ROUTE_CACHE_SECONDS = 6 * 3600
     HEADERS = {"User-Agent": "streamdeck-flight-radar/1.0"}
@@ -79,7 +79,8 @@ class FlightService:
         url = self.API_URL.format(lat=round(self.latitude, 2), lon=round(self.longitude, 2), radius=radius_nm)
         resp = requests.get(url, headers=self.HEADERS, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json().get("ac", []) or []
+        data = resp.json()
+        return data.get("aircraft") or data.get("ac") or []
 
     def get_nearby(self) -> list:
         """
